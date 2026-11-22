@@ -14,7 +14,17 @@ function App() {
         </p>
       </section>
 
-      <footer className="status">Setup coming soon</footer>
+      <section className="profile">
+        <label htmlFor="profile-select">Application profile</label>
+        <select id="profile-select" disabled defaultValue="">
+          <option value="">No profiles yet</option>
+        </select>
+        <p className="hint">Profile setup is coming in a future update.</p>
+      </section>
+
+      <footer className="status">
+        v{browser.runtime.getManifest().version} · Setup coming soon
+      </footer>
     </main>
   );
 }

@@ -13,9 +13,30 @@ A browser extension and backend that autofill job applications from saved profil
 | `backend/alembic/` | Database migrations |
 | `docs/` | Project documentation |
 
-## Getting started
+## Backend and database (Docker)
 
-```sh
-cp .env.example .env      # then fill in values
-docker compose up -d db   # start Postgres
+The backend (FastAPI, Python 3.13) and PostgreSQL run in Docker. You only need Docker Desktop, not a local Python install. Run every command from the project root in PowerShell.
+
+First-time setup: create your local `.env` and change the password in it.
+
+```powershell
+Copy-Item .env.example .env
 ```
+
+| Task | Command |
+| --- | --- |
+| Build and start everything | `docker compose up --build -d` |
+| Check status | `docker compose ps` |
+| Stop (keeps database data) | `docker compose down` |
+| Rebuild the backend after code changes | `docker compose up --build -d backend` |
+| Follow backend logs | `docker compose logs -f backend` |
+| Follow all logs | `docker compose logs -f` |
+| Run the backend tests | `docker compose run --rm backend pytest` |
+
+When it's running, http://127.0.0.1:8000/health returns `{"status":"ok","service":"applymate-backend"}`, and the interactive API docs are at http://127.0.0.1:8000/docs. Check it from PowerShell with:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+Database data lives in the `pgdata` Docker volume and survives `docker compose down`. Running `docker compose down -v` **deletes it**.
