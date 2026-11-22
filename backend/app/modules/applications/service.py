@@ -17,13 +17,23 @@ from sqlalchemy.orm import Session
 from app.modules.ai.errors import AIError
 from app.modules.ai.provider import StructuredAIProvider
 from app.modules.answers import service as saved
-from app.modules.applications.prompts import SYSTEM_INSTRUCTION, build_prompt
+from app.modules.applications import cache as answer_cache
+from app.modules.applications.prompts import (
+    COMPOSE_INSTRUCTION,
+    SYSTEM_INSTRUCTION,
+    build_compose_prompt,
+    build_prompt,
+)
 from app.modules.applications.schemas import (
     AIAnswers,
+    AIComposed,
     Answer,
+    ComposeRequest,
+    ComposeResponse,
     FormField,
     PrepareRequest,
     PrepareResponse,
+    Suggestion,
 )
 from app.modules.cv import service as cv_service
 from app.modules.cv.models import CVDetails
@@ -48,29 +58,51 @@ def _norm(text: str) -> str:
 # ---- 1. profile rules -------------------------------------------------------------
 
 
-def profile_answer(field: FormField, profile: Profile) -> str | None:
-    """Contact details straight from the profile, for clearly identified fields."""
+CONTACT_NOTES = {
+    "email": "No email in your profile. Add it with Edit details.",
+    "phone": "No phone number in your profile. Add it with Edit details.",
+    "linkedin": "No LinkedIn URL in your profile. Add it with Edit details.",
+    "location": "No location in your profile. Add it with Edit details.",
+    "last_name": "Your profile has a single name; add your last name yourself.",
+}
+
+
+def contact_kind(field: FormField) -> str | None:
+    """Which profile contact detail a field asks for, if it clearly asks for one."""
     if field.type in CHOICE_TYPES:
         return None
     label = _norm(field.label)
-    name = (profile.full_name or "").split()
     if field.type == "email" or re.search(r"\be ?mail\b", label):
-        return profile.email
+        return "email"
     if field.type == "tel" or re.search(r"\b(phone|mobile|telephone|cell)\b", label):
-        return profile.phone
+        return "phone"
     if "linkedin" in label:
-        return profile.linkedin_url
+        return "linkedin"
     if re.search(r"\b(first|given) name\b", label):
-        return name[0] if name else None
+        return "first_name"
     if re.search(r"\b(last|family) name\b|\bsurname\b", label):
-        return name[-1] if len(name) > 1 else None
-    if re.search(r"\b(company|employer|school|university|reference|referee|manager|recruiter)\b", label):
+        return "last_name"
+    if re.search(r"\b(company|employer|school|university|reference|referee|manager|recruiter|preferred)\b", label):
         return None
     if re.fullmatch(r"(your |full |legal |candidate |applicant )?name", label):
-        return profile.full_name
-    if re.search(r"\b(city|current location|location|where are you based)\b", label):
-        return profile.location
+        return "full_name"
+    if re.search(r"\b(city|current location|location|where are you based)\b", label) and "country" not in label:
+        return "location"
     return None
+
+
+def profile_answer(field: FormField, profile: Profile) -> str | None:
+    """Contact details straight from the profile, for clearly identified fields."""
+    name = (profile.full_name or "").split()
+    return {
+        "email": lambda: profile.email,
+        "phone": lambda: profile.phone,
+        "linkedin": lambda: profile.linkedin_url,
+        "first_name": lambda: name[0] if name else None,
+        "last_name": lambda: name[-1] if len(name) > 1 else None,
+        "full_name": lambda: profile.full_name,
+        "location": lambda: profile.location,
+    }.get(contact_kind(field) or "", lambda: None)()
 
 
 # ---- 3. AI answer checks ------------------------------------------------------------
@@ -112,11 +144,54 @@ def check_ai_answer(field: FormField, value: str | None, values: list[str | None
     return Answer(field_id=field.id, value=text[:MAX_TEXT], source="ai")
 
 
+TEXT_TYPES = {"text", "textarea", "number"}
+
+
+_YES = re.compile(r"^\s*(yes|yeah|sure|absolutely|of course|i am|i can|i'm)\b", re.I)
+_NO = re.compile(r"^\s*(no|not|i am not|i'm not|i cannot|i can't|unfortunately)\b", re.I)
+
+
+def contradicts(choice: str, answer: str) -> bool:
+    """True when the wording says the opposite of a yes/no choice."""
+    c = choice.strip().lower()
+    return bool((c in {"yes", "y"} and _NO.match(answer)) or (c in {"no", "n"} and _YES.match(answer)))
+
+
+def clean_suggestions(raw: list, field_type: str) -> list[Suggestion]:
+    """Up to 4 short, distinct choices, each with its pre-written answer when usable."""
+    limit = 600 if field_type == "textarea" else 200
+    seen: set[str] = set()
+    out: list[Suggestion] = []
+    for item in raw:
+        if item is None:
+            continue
+        label = " ".join((item.choice or "").split())[:80]
+        if not label or label.lower() in seen:
+            continue
+        seen.add(label.lower())
+        answer = " ".join((item.answer or "").split())[:limit] or None
+        if field_type == "number":
+            answer = label if re.fullmatch(r"[\d.,]+", label) else None
+        elif answer and contradicts(label, answer):
+            answer = None  # never offer wording that disagrees with the choice
+        out.append(Suggestion(label=label, answer=answer))
+    return out[:4]
+
+
 # ---- putting it together --------------------------------------------------------------
 
 
+def _compact(value):
+    """Drop empty values: fewer tokens in the prompt means a faster answer."""
+    if isinstance(value, dict):
+        return {k: c for k, v in value.items() if (c := _compact(v)) not in (None, "", [], {})}
+    if isinstance(value, list):
+        return [c for v in value if (c := _compact(v)) not in (None, "", [], {})]
+    return value
+
+
 def _applicant(profile: Profile, details: CVDetails | None, answers: list) -> dict:
-    return {
+    return _compact({
         "profile": {
             "full_name": profile.full_name,
             "email": profile.email,
@@ -125,8 +200,17 @@ def _applicant(profile: Profile, details: CVDetails | None, answers: list) -> di
             "linkedin_url": profile.linkedin_url,
         },
         "cv": cv_service.details_to_data(details).model_dump() if details else None,
-        "saved_answers": [{"question": a.question, "answer": a.answer} for a in answers[:50]],
-    }
+        "saved_answers": [{"question": a.question, "answer": a.answer} for a in answers[:30]],
+    })
+
+
+def _prompt_field(field: FormField) -> dict:
+    """A field as the AI needs to see it. Options whose value equals their label are
+    sent as plain strings."""
+    out: dict = {"id": field.id, "label": field.label, "type": field.type}
+    if field.options:
+        out["options"] = [o.value if o.value == o.label else {"value": o.value, "label": o.label} for o in field.options]
+    return out
 
 
 def prepare(
@@ -141,9 +225,23 @@ def prepare(
 
     answers: dict[str, Answer] = {}
     for field in request.fields:
-        value = profile_answer(field, profile)
-        if value:
-            answers[field.id] = Answer(field_id=field.id, value=value, source="profile")
+        kind = contact_kind(field)
+        if kind:
+            value = profile_answer(field, profile)
+            answers[field.id] = (
+                Answer(field_id=field.id, value=value, source="profile")
+                if value
+                else Answer(field_id=field.id, source="none", note=CONTACT_NOTES.get(kind))
+            )
+            continue
+        if saved.is_sensitive(field.label):
+            # Consent and personal questions (demographics, salary...) are the applicant's to answer.
+            note = (
+                "Read this and tick it yourself."
+                if saved.CONSENT.search(field.label)
+                else "Personal question: please answer it yourself."
+            )
+            answers[field.id] = Answer(field_id=field.id, source="none", note=note)
             continue
         remembered = by_question.get(saved.question_key(field.label))
         if remembered:
@@ -161,6 +259,17 @@ def prepare(
                 answers[field.id] = Answer(field_id=field.id, value=remembered, source="saved")
                 continue
 
+    # Questions the AI answered before (and that haven't changed) are reused instantly.
+    version = answer_cache.context_version(profile, details)
+    keys = {f.id: answer_cache.cache_key(f, version, request.job) for f in request.fields if f.id not in answers}
+    cache_hits = 0
+    if not request.refresh:
+        cached = answer_cache.lookup(db, profile_id, list(set(keys.values())))
+        for field_id, key in keys.items():
+            if key in cached:
+                answers[field_id] = answer_cache.from_payload(field_id, cached[key])
+                cache_hits += 1
+
     remaining = [f for f in request.fields if f.id not in answers]
     ai_used, ai_error = False, None
     if remaining:
@@ -170,19 +279,24 @@ def prepare(
                 prompt=build_prompt(
                     request.job.model_dump(),
                     _applicant(profile, details, saved_answers),
-                    [f.model_dump() for f in remaining],
+                    [_prompt_field(f) for f in remaining],
                 ),
                 schema=AIAnswers,
             )
             ai_used = True
             by_id = {f.id: f for f in remaining}
+            fresh: list[tuple[str, Answer]] = []
             for item in result.data.answers or []:
                 field = by_id.get(item.field_id)
                 if field is not None and field.id not in answers:
                     checked = check_ai_answer(field, item.value, item.values or [])
                     if item.note and checked.source == "none" and not checked.note:
                         checked.note = item.note[:300]
+                    if checked.source == "none" and field.type in TEXT_TYPES:
+                        checked.suggestions = clean_suggestions(item.suggestions or [], field.type)
                     answers[field.id] = checked
+                    fresh.append((keys[field.id], checked))
+            answer_cache.store(db, profile_id, fresh)  # next time these are instant
         except AIError as exc:
             ai_error = exc.message
 
@@ -190,10 +304,49 @@ def prepare(
         answers.setdefault(field.id, Answer(field_id=field.id, source="none"))
 
     logger.info(
-        "Prepared answers for profile %s: %d fields, %d answered (ai_used=%s)",
+        "Prepared answers for profile %s: %d fields, %d answered, %d from cache (ai_used=%s)",
         profile_id, len(request.fields),
-        sum(1 for a in answers.values() if a.source != "none"), ai_used,
+        sum(1 for a in answers.values() if a.source != "none"), cache_hits, ai_used,
     )
     return PrepareResponse(
-        answers=[answers[f.id] for f in request.fields], ai_used=ai_used, ai_error=ai_error
+        answers=[answers[f.id] for f in request.fields],
+        ai_used=ai_used,
+        ai_error=ai_error,
+        cache_hits=cache_hits,
     )
+
+
+# ---- writing an answer from the applicant's choice ------------------------------------
+
+
+def compose(
+    db: Session, provider: StructuredAIProvider, profile_id: uuid.UUID, request: ComposeRequest
+) -> ComposeResponse:
+    """Turn the option the applicant clicked (e.g. "Yes") into a short answer in their voice.
+    The choice is the answer; the AI only words it. Raises AIError if the AI fails."""
+    profile = db.get(Profile, profile_id)
+    if profile is None:
+        raise ProfileNotFound
+    choice = " ".join(request.choice.split())
+    # Personal questions and simple values are used exactly as chosen.
+    if saved.is_sensitive(request.question) or request.type not in {"text", "textarea"}:
+        return ComposeResponse(value=choice, composed=False)
+
+    details = db.get(CVDetails, profile_id)
+    result = provider.generate_structured(
+        system=COMPOSE_INSTRUCTION,
+        prompt=build_compose_prompt(
+            request.job.model_dump(),
+            _applicant(profile, details, []),
+            request.question,
+            request.type,
+            choice,
+        ),
+        schema=AIComposed,
+    )
+    value = " ".join((result.data.value or "").split())[: 600 if request.type == "textarea" else 200]
+    # Never let the wording contradict a yes/no choice.
+    if not value or contradicts(choice, value):
+        return ComposeResponse(value=choice, composed=False)
+    logger.info("Composed an answer for profile %s (%s field)", profile_id, request.type)
+    return ComposeResponse(value=value, composed=True)

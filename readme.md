@@ -202,6 +202,13 @@ Once a profile is set up, the popup shows the workflow **Profile → Job → Ans
 
 Permissions: `activeTab` + `scripting` (the page is read only when you open Job Fellow on it) and `storage`.
 
+### Speed and the answer cache
+
+- **Answer cache:** AI answers are remembered in PostgreSQL (`answer_cache`, per profile). A repeated question, on any site, is answered instantly without calling Gemini; the review shows "N reused instantly". An entry is reused only if the question, its options, your profile and confirmed CV are unchanged (editing either clears it), and, for job-specific questions such as cover letters, the job description is the same. Entries unused for 30 days are removed. **Regenerate** in the review asks the AI again.
+- **Saved answers** (answers you approved) still take priority over the cache. Consent, personal and salary questions are never cached or saved.
+- **Faster AI calls:** one reused connection, thinking switched off (`GEMINI_THINKING=on` to re-enable), compact prompts, and one AI call per form. If the main model's daily quota runs out or it is overloaded, the call moves to `GEMINI_FALLBACK_MODEL` (default `gemini-2.5-flash`; `none` disables it). Free-tier quotas are per model per day, so a fast current model as `GEMINI_MODEL` (e.g. `gemini-2.5-flash`) avoids the failed first attempt.
+- Page scanning and filling poll for custom dropdowns instead of waiting fixed times.
+
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /api/v1/profiles/{profile_id}/applications/answers` | Prepare answers for detected fields (`job`, `fields`) |

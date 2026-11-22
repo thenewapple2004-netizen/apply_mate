@@ -34,6 +34,7 @@ class FormField(_Strict):
 
 class PrepareRequest(_Strict):
     job: Job
+    refresh: bool = False  # ignore remembered AI answers and ask the AI again
     fields: Annotated[list[FormField], Field(min_length=1, max_length=150)]
 
 
@@ -45,12 +46,23 @@ class Answer(BaseModel):
     values: list[str] = []
     source: Source
     note: str | None = None
+    # For unanswered text questions: short choices the applicant can pick from
+    # (e.g. "Yes" / "No", "2 weeks" / "1 month"), each with the full answer to use if
+    # picked. Never filled in automatically.
+    suggestions: list["Suggestion"] = []
+    cached: bool = False  # reused from an earlier identical question (no AI call)
+
+
+class Suggestion(BaseModel):
+    label: str
+    answer: str | None = None  # None: the extension asks the backend to word it on click
 
 
 class PrepareResponse(BaseModel):
     answers: list[Answer]
     ai_used: bool
     ai_error: str | None = None
+    cache_hits: int = 0  # answers reused instantly, without the AI
 
 
 class SavedAnswerIn(_Strict):
@@ -70,12 +82,36 @@ class SavedAnswerRead(BaseModel):
 # ---- what the AI returns ----
 
 
+class ComposeRequest(_Strict):
+    """Write the answer to one question from the option the applicant picked."""
+
+    job: Job
+    question: Annotated[str, Field(min_length=1, max_length=1000)]
+    type: FieldType
+    choice: Annotated[str, Field(min_length=1, max_length=300)]
+
+
+class ComposeResponse(BaseModel):
+    value: str
+    composed: bool  # False when the choice is used as-is (e.g. sensitive question)
+
+
 class AIAnswer(BaseModel):
     field_id: str
     value: str | None = None
     values: list[str | None] | None = None
     note: str | None = None
+    suggestions: list["AISuggestion | None"] | None = None
+
+
+class AISuggestion(BaseModel):
+    choice: str | None = None
+    answer: str | None = None
 
 
 class AIAnswers(BaseModel):
     answers: list[AIAnswer] | None = None
+
+
+class AIComposed(BaseModel):
+    value: str | None = None

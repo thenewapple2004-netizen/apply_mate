@@ -9,7 +9,10 @@ from app.db.session import get_db
 from app.modules.ai.provider import StructuredAIProvider, get_ai_provider
 from app.modules.answers import service as saved
 from app.modules.applications import service
+from app.modules.ai.errors import AIError, AIInvalidResponse, AIQuotaExceeded, AIRejected, AITimeout
 from app.modules.applications.schemas import (
+    ComposeRequest,
+    ComposeResponse,
     PrepareRequest,
     PrepareResponse,
     SaveAnswersRequest,
@@ -43,6 +46,33 @@ async def prepare_answers(
         return await run_in_threadpool(service.prepare, db, provider, profile_id, body)
     except service.ProfileNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found") from None
+
+
+_AI_STATUS = {
+    AIQuotaExceeded: status.HTTP_429_TOO_MANY_REQUESTS,
+    AITimeout: status.HTTP_504_GATEWAY_TIMEOUT,
+    AIInvalidResponse: status.HTTP_502_BAD_GATEWAY,
+    AIRejected: status.HTTP_502_BAD_GATEWAY,
+}
+
+
+@router.post(
+    "/applications/answers/compose",
+    response_model=ComposeResponse,
+    responses={404: {"description": "Profile not found"}, 429: {}, 502: {}, 503: {}, 504: {}},
+)
+async def compose_answer(
+    profile_id: uuid.UUID, body: ComposeRequest, db: DbSession, provider: Provider
+) -> ComposeResponse:
+    """Write a short answer from the option the applicant clicked (e.g. "Yes"),
+    keeping that choice. Sensitive questions return the choice unchanged."""
+    try:
+        return await run_in_threadpool(service.compose, db, provider, profile_id, body)
+    except service.ProfileNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found") from None
+    except AIError as exc:
+        code = next((c for t, c in _AI_STATUS.items() if isinstance(exc, t)), status.HTTP_503_SERVICE_UNAVAILABLE)
+        raise HTTPException(code, exc.message) from None
 
 
 @router.get("/answers", response_model=list[SavedAnswerRead])

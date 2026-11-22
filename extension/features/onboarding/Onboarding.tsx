@@ -5,6 +5,7 @@ import { clearActiveProfileId, loadActiveProfileId, saveActiveProfileId } from '
 import { type Profile, profilesApi } from '../profiles/api.ts';
 
 import { ApplyPanel } from '../apply/ApplyPanel.tsx';
+import { forgetProfile } from '../apply/storage.ts';
 
 import { type OnboardingState, onboardingApi } from './api.ts';
 import { EditDetails } from './EditDetails.tsx';
@@ -69,6 +70,7 @@ export function Onboarding() {
     await profilesApi.remove(activeId).catch((error) => {
       if (!(error instanceof ApiError && error.status === 404)) throw error;
     });
+    await forgetProfile(activeId); // its job and prepared answers stored in this browser
     setProfiles((p) => (p.kind === 'ready' ? { kind: 'ready', value: p.value.filter((x) => x.id !== activeId) } : p));
     await select(null);
     setNotice(`"${removed?.full_name ?? 'Profile'}" was deleted.`);
