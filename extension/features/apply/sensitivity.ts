@@ -9,7 +9,7 @@ import type { DetectedField, FillStatus } from './page-scripts.ts';
 export const CONSENT = /\b(agree|consent|certify|acknowledge|accept|terms|privacy|policy|declare|attest)\b/i;
 /** Personal/demographic or negotiable answers: never stored for reuse. */
 export const SENSITIVE =
-  /\b(gender|sex|race|racial|ethnic\w*|hispanic|latin[oax]|veteran|disabilit\w*|sexual orientation|pronouns?|age range|date of birth|religio\w*|marital|criminal|conviction|salary|compensation|pay expectations?)\b/i;
+  /\b(gender|sex|race|racial|ethnic\w*|hispanic|latin[oax]|veteran|disabilit\w*|sexual orientation|pronouns?|age range|date of birth|religio\w*|marital|criminal|conviction|salary|compensation|pay expectations?|authori[sz]ed|authori[sz]ation|legally (able|eligible|entitled|permitted)|right to work|eligible to work|work permit|work eligibility|sponsor\w*|visa|citizen\w*|nationality|immigration)\b/i;
 /** Answers written for one particular job/company. */
 const JOB_SPECIFIC =
   /\b(why|cover letter|motivation|interest(ed)? in|about yourself|anything else|additional information|how did you hear|referr(ed|al))\b/i;

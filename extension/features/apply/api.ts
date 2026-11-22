@@ -14,7 +14,13 @@ export interface PreparedAnswer {
   value: string | null;
   values: string[];
   /** Where the answer came from; 'user' once you edit it in the review. */
-  source: 'profile' | 'cv' | 'saved' | 'ai' | 'user' | 'none';
+  source: 'profile' | 'preference' | 'cv' | 'saved' | 'ai' | 'user' | 'none';
+  /** Salary, work authorization and sponsorship come from your preferences but are only
+   *  proposals: they're filled only after you approve them. */
+  needs_approval?: boolean;
+  approved?: boolean;
+  /** Which preference this question is about (e.g. "salary"), even when it isn't set. */
+  preference?: string | null;
   note: string | null;
   /** Choices to click for an unanswered text question (e.g. "Yes" / "No"), each with
    *  the answer to use when picked (null: worded by the backend on click). */
@@ -28,6 +34,8 @@ export interface PrepareResponse {
   ai_used: boolean;
   ai_error: string | null;
   cache_hits: number;
+  /** Changes whenever the profile, CV or preferences change (see contextVersion). */
+  context_version: string;
 }
 
 export interface JobApplication {
@@ -61,6 +69,11 @@ export const applyApi = {
       },
       timeoutMs: 180_000, // the AI can take a while on long forms
     }),
+
+  /** The current version of everything answers are based on. Answers prepared under an
+   *  older version are out of date. */
+  contextVersion: (profileId: string, signal?: AbortSignal) =>
+    apiRequest<{ version: string }>(`${base(profileId)}/applications/context`, { signal }),
 
   /** Records that the user submitted this job. Safe to repeat: the same job counts once. */
   markApplied: (profileId: string, job: Pick<Job, 'title' | 'company' | 'url'>) =>

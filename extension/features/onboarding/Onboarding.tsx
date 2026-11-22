@@ -6,6 +6,7 @@ import { type Profile, profilesApi } from '../profiles/api.ts';
 
 import { ApplyPanel } from '../apply/ApplyPanel.tsx';
 import { forgetProfile } from '../apply/storage.ts';
+import { PreferencesForm } from '../preferences/PreferencesForm.tsx';
 
 import { type OnboardingState, onboardingApi } from './api.ts';
 import { EditDetails } from './EditDetails.tsx';
@@ -15,7 +16,7 @@ import { Summary } from './Summary.tsx';
 
 type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'error'; message: string };
 /** Secondary views for a profile that has finished onboarding. */
-type Extra = 'none' | 'edit' | 'replace' | 'review';
+type Extra = 'none' | 'edit' | 'preferences' | 'replace' | 'review';
 
 export function Onboarding() {
   const [profiles, setProfiles] = useState<Load<Profile[]>>({ kind: 'loading' });
@@ -202,6 +203,15 @@ function ProfileFlow({ profileId, onDelete }: { profileId: string; onDelete: () 
   if (extra === 'edit') {
     return <EditDetails state={s} onSaved={(next) => done(next, 'Changes saved.')} onCancel={() => setExtra('none')} />;
   }
+  if (extra === 'preferences') {
+    return (
+      <PreferencesForm
+        profileId={profileId}
+        onSaved={() => done(s, 'Preferences saved. Answers prepared earlier will be prepared again.')}
+        onCancel={() => setExtra('none')}
+      />
+    );
+  }
   if (extra === 'replace') {
     return (
       <ResumeUpload
@@ -243,6 +253,7 @@ function ProfileFlow({ profileId, onDelete }: { profileId: string; onDelete: () 
         <Summary
           state={s}
           onEdit={() => { setMessage(null); setExtra('edit'); }}
+          onPreferences={() => { setMessage(null); setExtra('preferences'); }}
           onReplace={() => { setMessage(null); setExtra('replace'); }}
           onReview={() => { setMessage(null); setExtra('review'); }}
           onDeleteProfile={onDelete}

@@ -18,6 +18,8 @@ from app.modules.ai.errors import AIError
 from app.modules.ai.provider import StructuredAIProvider
 from app.modules.answers import service as saved
 from app.modules.applications import cache as answer_cache
+from app.modules.applications import preference_answers
+from app.modules.applications.options import match_option, norm
 from app.modules.applications.prompts import (
     COMPOSE_INSTRUCTION,
     SYSTEM_INSTRUCTION,
@@ -37,6 +39,7 @@ from app.modules.applications.schemas import (
 )
 from app.modules.cv import service as cv_service
 from app.modules.cv.models import CVDetails
+from app.modules.preferences.models import ApplicantPreferences
 from app.modules.profiles.models import Profile
 
 logger = logging.getLogger(__name__)
@@ -51,8 +54,7 @@ class ProfileNotFound(Exception):
     pass
 
 
-def _norm(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+_norm = norm
 
 
 # ---- 1. profile rules -------------------------------------------------------------
@@ -110,13 +112,7 @@ def profile_answer(field: FormField, profile: Profile) -> str | None:
 
 def _match_option(field: FormField, raw: str | None) -> str | None:
     """Map an answer to the exact option value, by value or label (case-insensitive)."""
-    if raw is None:
-        return None
-    wanted = _norm(raw)
-    for option in field.options:
-        if raw == option.value or wanted in (_norm(option.value), _norm(option.label)):
-            return option.value
-    return None
+    return match_option(field, raw)
 
 
 def check_ai_answer(field: FormField, value: str | None, values: list[str | None]) -> Answer:
@@ -190,7 +186,9 @@ def _compact(value):
     return value
 
 
-def _applicant(profile: Profile, details: CVDetails | None, answers: list) -> dict:
+def _applicant(
+    profile: Profile, details: CVDetails | None, answers: list, prefs: ApplicantPreferences | None = None
+) -> dict:
     return _compact({
         "profile": {
             "full_name": profile.full_name,
@@ -200,6 +198,14 @@ def _applicant(profile: Profile, details: CVDetails | None, answers: list) -> di
             "linkedin_url": profile.linkedin_url,
         },
         "cv": cv_service.details_to_data(details).model_dump() if details else None,
+        # Only the non-sensitive preferences. Salary, work authorization and sponsorship are
+        # never sent to the AI: those answers come from the preferences, with the user's approval.
+        "preferences": {
+            "notice_period": prefs.notice_period,
+            "preferred_locations": prefs.preferred_locations,
+            "work_arrangements": prefs.work_arrangements,
+            "reason_for_changing_jobs": prefs.change_reason,
+        } if prefs else None,
         "saved_answers": [{"question": a.question, "answer": a.answer} for a in answers[:30]],
     })
 
@@ -220,10 +226,12 @@ def prepare(
     if profile is None:
         raise ProfileNotFound
     details = db.get(CVDetails, profile_id)
+    prefs = db.get(ApplicantPreferences, profile_id)
     saved_answers = saved.list_answers(db, profile_id)
     by_question = {a.question_key: a.answer for a in saved_answers}
 
     answers: dict[str, Answer] = {}
+    missing_pref: dict[str, str] = {}  # not-set preferences: the AI may still suggest options
     for field in request.fields:
         kind = contact_kind(field)
         if kind:
@@ -234,6 +242,16 @@ def prepare(
                 else Answer(field_id=field.id, source="none", note=CONTACT_NOTES.get(kind))
             )
             continue
+        which = preference_answers.kind(field)
+        if which:
+            result = preference_answers.answer(field, which, prefs)
+            unset = preference_answers.is_missing(prefs, which)
+            if unset and which not in preference_answers.APPROVAL_KINDS:
+                missing_pref[field.id] = which  # carry on: saved answers, then AI suggestions
+            else:
+                # Set (answered from the preference) or sensitive (never sent to the AI).
+                answers[field.id] = result
+                continue
         if saved.is_sensitive(field.label):
             # Consent and personal questions (demographics, salary...) are the applicant's to answer.
             note = (
@@ -260,7 +278,7 @@ def prepare(
                 continue
 
     # Questions the AI answered before (and that haven't changed) are reused instantly.
-    version = answer_cache.context_version(profile, details)
+    version = answer_cache.context_version(profile, details, prefs)
     keys = {f.id: answer_cache.cache_key(f, version, request.job) for f in request.fields if f.id not in answers}
     cache_hits = 0
     if not request.refresh:
@@ -278,7 +296,7 @@ def prepare(
                 system=SYSTEM_INSTRUCTION,
                 prompt=build_prompt(
                     request.job.model_dump(),
-                    _applicant(profile, details, saved_answers),
+                    _applicant(profile, details, saved_answers, prefs),
                     [_prompt_field(f) for f in remaining],
                 ),
                 schema=AIAnswers,
@@ -302,6 +320,12 @@ def prepare(
 
     for field in request.fields:
         answers.setdefault(field.id, Answer(field_id=field.id, source="none"))
+    # A question about a preference that isn't set: say clearly where to add it (the AI may
+    # still have offered options to pick from, but it never answers for the applicant).
+    for field_id, which in missing_pref.items():
+        if answers[field_id].source == "none":
+            answers[field_id].note = preference_answers.MISSING[which]
+            answers[field_id].preference = which
 
     logger.info(
         "Prepared answers for profile %s: %d fields, %d answered, %d from cache (ai_used=%s)",
@@ -313,6 +337,17 @@ def prepare(
         ai_used=ai_used,
         ai_error=ai_error,
         cache_hits=cache_hits,
+        context_version=version,
+    )
+
+
+def current_context_version(db: Session, profile_id: uuid.UUID) -> str:
+    """The version stamp of everything answers are based on (see answer_cache.context_version)."""
+    profile = db.get(Profile, profile_id)
+    if profile is None:
+        raise ProfileNotFound
+    return answer_cache.context_version(
+        profile, db.get(CVDetails, profile_id), db.get(ApplicantPreferences, profile_id)
     )
 
 

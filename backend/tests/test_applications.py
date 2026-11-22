@@ -94,8 +94,9 @@ def test_ai_answers_are_checked_against_the_page(db_client: TestClient, ai: Fake
     assert a["f6"] == {**a["f6"], "value": "5", "source": "ai"}
     assert a["f7"]["value"] == "bachelors"
     assert a["f8"]["values"] == ["python", "fastapi"]
-    assert a["f9"]["value"] is None and a["f9"]["note"] == "No preference in your profile."
-    assert a["f10"]["value"] == "yes"
+    assert a["f9"]["value"] is None and "Preferences" in a["f9"]["note"]  # unset preference: says where to add it
+    # Work authorization is sensitive: the AI never answers it, even when it offers an answer.
+    assert a["f10"]["value"] is None and a["f10"]["preference"] == "authorization"
     assert a["f11"]["value"].startswith("I build payment APIs")
     assert a["f12"]["values"] == [] and a["f12"]["source"] == "none" and "yourself" in a["f12"]["note"]
 
@@ -107,7 +108,7 @@ def test_the_ai_only_receives_unanswered_fields_and_real_data(db_client: TestCli
     prompt = ai.prompts[0]
     fields = json.loads(prompt.split("<fields>\n")[1].split("\n</fields>")[0])
     # Contact fields come from the profile and the consent box is the user's: neither goes to the AI.
-    assert [f["id"] for f in fields] == ["f6", "f7", "f8", "f9", "f10", "f11"]
+    assert [f["id"] for f in fields] == ["f6", "f7", "f8", "f9", "f11"]  # work authorization (f10) is sensitive: never sent
     assert "Nimbus Pay" in prompt and "Senior Software Engineer" in prompt and "LUMS" in prompt
 
 
@@ -172,12 +173,12 @@ def test_saved_answers_are_reused_before_asking_the_ai(db_client: TestClient, ai
         {"question": "Which of these technologies have you used professionally?", "answer": "Python; Kubernetes"},
         {"question": "Notice period", "answer": "1 month"},
     ]})
-    assert saved.json() == {"saved": 4}
+    assert saved.json() == {"saved": 3}  # work authorization is sensitive: never saved
     ai.outcome = {"answers": []}
 
     a = by_id(prepare(db_client, pid))
 
-    assert a["f10"] == {**a["f10"], "value": "yes", "source": "saved"}   # matched despite the "*"
+    assert a["f10"]["source"] == "none" and "Preferences" in a["f10"]["note"]  # asked, never reused or guessed
     assert a["f9"]["value"] == "remote" and a["f9"]["source"] == "saved"
     assert a["f8"]["values"] == ["python", "kubernetes"]
     fields_sent = ai.prompts[0].split("<fields>")[1]
@@ -196,12 +197,12 @@ def test_saving_the_same_question_updates_it(db_client: TestClient, pid: str) ->
 def test_saved_answers_are_per_profile(db_client: TestClient, ai: FakeProvider, pid: str) -> None:
     other = db_client.post("/api/v1/profiles", json={"full_name": "Ahmed"}).json()["id"]
     db_client.put(f"/api/v1/profiles/{pid}/answers", json={"answers": [
-        {"question": "Are you legally authorized to work in Pakistan?", "answer": "Yes"}]})
+        {"question": "Which work arrangement do you prefer?", "answer": "Remote"}]})
     ai.outcome = {"answers": []}
 
     assert db_client.get(f"/api/v1/profiles/{other}/answers").json() == []
-    a = by_id(prepare(db_client, other, fields=[FIELDS[9]]))
-    assert a["f10"]["source"] == "none"
+    a = by_id(prepare(db_client, other, fields=[FIELDS[8]]))
+    assert a["f9"]["source"] == "none"
 
 
 # --- sensitive questions and missing information ----------------------------------------

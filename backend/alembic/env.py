@@ -12,6 +12,7 @@ import app.modules.resumes.models  # noqa: E402, F401
 import app.modules.cv.models  # noqa: E402, F401
 import app.modules.answers.models  # noqa: E402, F401
 import app.modules.applications.models  # noqa: E402, F401
+import app.modules.preferences.models  # noqa: E402, F401
 
 config = context.config
 

@@ -21,6 +21,7 @@ from app.modules.answers import service as saved
 from app.modules.answers.models import AnswerCache
 from app.modules.applications.schemas import Answer, FormField, Job
 from app.modules.cv.models import CVDetails
+from app.modules.preferences.models import ApplicantPreferences
 from app.modules.profiles.models import Profile
 
 MAX_AGE = timedelta(days=30)
@@ -31,9 +32,16 @@ _JOB_SPECIFIC = re.compile(
 )
 
 
-def context_version(profile: Profile, details: CVDetails | None) -> str:
-    """Changes whenever the profile or confirmed CV is edited."""
-    stamp = [profile.updated_at.isoformat() if profile.updated_at else "", details.updated_at.isoformat() if details else ""]
+def context_version(
+    profile: Profile, details: CVDetails | None, prefs: ApplicantPreferences | None = None
+) -> str:
+    """Changes whenever the profile, confirmed CV or preferences are edited, which
+    makes every cached answer (and any answers prepared in the extension) out of date."""
+    stamp = [
+        profile.updated_at.isoformat() if profile.updated_at else "",
+        details.updated_at.isoformat() if details else "",
+        prefs.updated_at.isoformat() if prefs else "",
+    ]
     return hashlib.sha256(json.dumps(stamp).encode()).hexdigest()[:16]
 
 

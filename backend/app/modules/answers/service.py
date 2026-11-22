@@ -16,7 +16,9 @@ CONSENT = re.compile(
 SENSITIVE = re.compile(
     r"\b(gender|sex|race|racial|ethnic\w*|hispanic|latin[oax]|veteran|disabilit\w*|sexual orientation|"
     r"pronouns?|age range|date of birth|religio\w*|marital|criminal|conviction|salary|compensation|"
-    r"pay expectations?)\b",
+    r"pay expectations?|authori[sz]ed|authori[sz]ation|legally (able|eligible|entitled|permitted)|"
+    r"right to work|eligible to work|work permit|work eligibility|sponsor\w*|visa|citizen\w*|"
+    r"nationality|immigration)\b",
     re.I,
 )
 

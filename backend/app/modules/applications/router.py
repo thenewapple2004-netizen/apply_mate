@@ -16,6 +16,7 @@ from app.modules.applications.schemas import (
     ApplicationRead,
     ApplicationStats,
     ComposeRequest,
+    ContextVersion,
     ComposeResponse,
     PrepareRequest,
     PrepareResponse,
@@ -126,6 +127,16 @@ def delete_application(profile_id: uuid.UUID, application_id: uuid.UUID, db: DbS
     except history.ApplicationNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Application not found") from None
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/applications/context", response_model=ContextVersion, responses={404: {"description": "Profile not found"}})
+def context_version(profile_id: uuid.UUID, db: DbSession) -> ContextVersion:
+    """A stamp that changes whenever the profile, CV or preferences change. The extension
+    compares it with the one stored with prepared answers and discards outdated ones."""
+    try:
+        return ContextVersion(version=service.current_context_version(db, profile_id))
+    except service.ProfileNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found") from None
 
 
 @router.get("/answers", response_model=list[SavedAnswerRead])

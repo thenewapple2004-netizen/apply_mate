@@ -31,6 +31,7 @@ type Message = { kind: 'error' | 'success' | 'info'; text: string; action?: { la
 
 const SOURCE_LABEL: Record<PreparedAnswer['source'], string> = {
   profile: 'Profile',
+  preference: 'Preference',
   cv: 'CV',
   saved: 'Saved',
   ai: 'AI',
@@ -46,6 +47,10 @@ const FILL_LABEL: Partial<Record<FillStatus, string>> = {
 };
 
 const hasAnswer = (a: PreparedAnswer) => (a.value !== null && a.value.trim() !== '') || a.values.length > 0;
+/** Answers that wait for the user's approval (salary, work authorization, sponsorship). */
+const awaitsApproval = (a: PreparedAnswer) => hasAnswer(a) && Boolean(a.needs_approval) && !a.approved;
+/** An answer that will actually be filled: it has a value and, if required, was approved. */
+const usable = (a: PreparedAnswer) => hasAnswer(a) && !awaitsApproval(a);
 const plain = (error: unknown) => describeError(error).replace(/^Unexpected error: /, '');
 
 /** Detect job -> prepare answers -> review -> fill the current page. */
@@ -68,7 +73,19 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
       if (!alive.current) return;
       setJob(storedJob);
       setTab(current);
-      if (current && storedJob) setPage(await loadPrepared(profileId, storedJob, current.url));
+      if (current && storedJob) {
+        const stored = await loadPrepared(profileId, storedJob, current.url);
+        if (!stored) return;
+        // Answers prepared before the profile, CV or preferences changed may be wrong now.
+        const latest = await applyApi.contextVersion(profileId).catch(() => null);
+        if (!alive.current) return;
+        if (latest && stored.contextVersion !== latest.version) {
+          await clearPrepared(stored);
+          setMessage({ kind: 'info', text: 'Your profile or preferences changed, so earlier answers were cleared. Prepare them again.' });
+        } else {
+          setPage(stored);
+        }
+      }
     })();
     return () => {
       alive.current = false;
@@ -161,6 +178,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
         answers: result.answers,
         aiError: result.ai_error,
         cacheHits: result.cache_hits,
+        contextVersion: result.context_version,
         fillStatus: null,
       };
       setPage(next);
@@ -174,10 +192,21 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
 
   function editAnswer(fieldId: string, patch: Partial<PreparedAnswer>) {
     if (!page) return;
+    // Typing or picking an answer yourself is your own decision, so it needs no further approval.
     const next = {
       ...page,
-      answers: page.answers.map((a) => (a.field_id === fieldId ? { ...a, ...patch, source: 'user' as const } : a)),
+      answers: page.answers.map((a) =>
+        a.field_id === fieldId ? { ...a, ...patch, source: 'user' as const, needs_approval: false } : a,
+      ),
     };
+    setPage(next);
+    void savePrepared(next);
+  }
+
+  /** Approve (or withdraw approval for) a proposed salary / work-authorization / sponsorship answer. */
+  function approveAnswer(fieldId: string, approved: boolean) {
+    if (!page) return;
+    const next = { ...page, answers: page.answers.map((a) => (a.field_id === fieldId ? { ...a, approved } : a)) };
     setPage(next);
     void savePrepared(next);
   }
@@ -241,7 +270,8 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
         return;
       }
       const fields = new Map(page.fields.map((f) => [f.id, f]));
-      const instructions: FillInstruction[] = page.answers.filter(hasAnswer).flatMap((a) => {
+      // Only answers that have a value and, where required, your approval.
+      const instructions: FillInstruction[] = page.answers.filter(usable).flatMap((a) => {
         const f = fields.get(a.field_id);
         return f ? [{ id: f.id, type: f.type, widget: f.widget, locator: f.locator, value: a.value, values: a.values }] : [];
       });
@@ -256,10 +286,12 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
       const filled = count(['filled', 'unchanged']);
       const kept = count(['kept']);
       const failed = count(['not_found', 'no_option', 'failed']);
-      const blank = page.answers.length - instructions.length;
+      const waiting = page.answers.filter(awaitsApproval).length;
+      const blank = page.answers.length - instructions.length - waiting;
       const parts = [`Filled ${filled} field${filled === 1 ? '' : 's'}.`];
       if (kept) parts.push(`Kept ${kept} value${kept === 1 ? '' : 's'} you'd already entered.`);
       if (failed) parts.push(`${failed} couldn't be filled (marked below).`);
+      if (waiting) parts.push(`${waiting} waiting for your approval.`);
       if (blank) parts.push(`${blank} left for you.`);
       if (outcome.newFields) parts.push(`${outcome.newFields} new question${outcome.newFields === 1 ? '' : 's'} appeared; use "Prepare again" to answer them.`);
       parts.push('Check the page, then submit it yourself.');
@@ -287,7 +319,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
 
   // ---- view --------------------------------------------------------------------------------
 
-  const answered = page ? page.answers.filter(hasAnswer).length : 0;
+  const answered = page ? page.answers.filter(usable).length : 0;
   const step = !job ? 2 : !page ? 3 : page.fillStatus ? 5 : 4;
 
   return (
@@ -425,6 +457,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
               busy={busy}
               composing={composing}
               onEdit={editAnswer}
+              onApprove={approveAnswer}
               onChoose={(field, choice) => void chooseSuggestion(field, choice)}
               onFill={() => void fill()}
               onRegenerate={async () => {
@@ -451,6 +484,7 @@ function AnswerReview(props: {
   busy: Busy;
   composing: string | null;
   onEdit: (fieldId: string, patch: Partial<PreparedAnswer>) => void;
+  onApprove: (fieldId: string, approved: boolean) => void;
   onChoose: (field: DetectedField, choice: string) => void;
   onFill: () => void;
   onRedo: () => void;
@@ -458,7 +492,8 @@ function AnswerReview(props: {
 }) {
   const { page } = props;
   const fields = new Map(page.fields.map((f) => [f.id, f]));
-  const missingRequired = page.answers.filter((a) => !hasAnswer(a) && fields.get(a.field_id)?.required).length;
+  const missingRequired = page.answers.filter((a) => !usable(a) && fields.get(a.field_id)?.required).length;
+  const waiting = page.answers.filter(awaitsApproval).length;
   return (
     <div className="step-card review">
       <div className="job-head">
@@ -484,6 +519,14 @@ function AnswerReview(props: {
         {missingRequired > 0 && ` ${missingRequired} required question${missingRequired === 1 ? '' : 's'} still need${missingRequired === 1 ? 's' : ''} your input.`}{' '}
         Edit anything; clear what you don't want filled.
       </p>
+      {waiting > 0 && (
+        <p className="notice warn" role="status">
+          <span>
+            {waiting} answer{waiting === 1 ? '' : 's'} from your preferences (salary, work authorization or
+            sponsorship) will be filled only after you tick <strong>Approve</strong>.
+          </span>
+        </p>
+      )}
       {page.aiError && (
         <p className="notice warn">AI answers aren't available: {page.aiError} Profile and saved answers are still used.</p>
       )}
@@ -513,6 +556,7 @@ function AnswerReview(props: {
               composing={props.composing === field.id}
               disabled={props.composing !== null}
               onEdit={props.onEdit}
+              onApprove={props.onApprove}
               onChoose={props.onChoose}
             />
           ) : null;
@@ -535,6 +579,7 @@ function AnswerRow({
   composing,
   disabled,
   onEdit,
+  onApprove,
   onChoose,
 }: {
   field: DetectedField;
@@ -543,6 +588,7 @@ function AnswerRow({
   composing: boolean;
   disabled: boolean;
   onEdit: (id: string, patch: Partial<PreparedAnswer>) => void;
+  onApprove: (id: string, approved: boolean) => void;
   onChoose: (field: DetectedField, choice: string) => void;
 }) {
   // One-click choices for a question that still needs the user.
@@ -559,6 +605,7 @@ function AnswerRow({
     }
   }
   const id = `answer-${field.id}`;
+  const pending = awaitsApproval(answer);
   const source = hasAnswer(answer) ? answer.source : 'none';
   let control;
   if (field.type === 'textarea') {
@@ -605,7 +652,7 @@ function AnswerRow({
           {field.label || 'Unlabelled field'}
           {field.required && <span aria-hidden="true"> *</span>}
         </label>
-        <span className={`source ${source}`}>{SOURCE_LABEL[source]}</span>
+        <span className={pending ? 'source none' : `source ${source}`}>{pending ? 'Approve' : SOURCE_LABEL[source]}</span>
       </div>
       {chips.length > 0 && (
         <div className="chips" role="group" aria-label={`Quick answers for: ${field.label}`}>
@@ -618,6 +665,12 @@ function AnswerRow({
         </div>
       )}
       {control}
+      {answer.needs_approval && hasAnswer(answer) && (
+        <label className="check approve">
+          <input type="checkbox" checked={Boolean(answer.approved)} onChange={(e) => onApprove(field.id, e.target.checked)} />
+          Approve: use this answer from my preferences
+        </label>
+      )}
       {problem && <span className={status === 'kept' ? 'hint' : 'field-error'}>{problem}</span>}
       {answer.note && !hasAnswer(answer) && <span className="hint">{answer.note}</span>}
     </div>

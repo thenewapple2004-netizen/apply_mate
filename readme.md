@@ -202,6 +202,21 @@ Once a profile is set up, the popup shows the workflow **Profile → Job → Ans
 
 Permissions: `activeTab` + `scripting` (the page is read only when you open Job Fellow on it) and `storage`.
 
+### Preferences
+
+**Profile & resume → Preferences** holds what you want and are allowed to do. Everything is optional and stored per profile in PostgreSQL: salary expectation, notice period, preferred locations, work arrangement (remote / hybrid / on-site), the countries you're authorized to work in, whether you need visa sponsorship, and your reason for changing jobs.
+
+- Questions about these are answered **from your preferences, not by the AI**. A notice period, locations, arrangement or reason for changing jobs is filled directly.
+- **Salary, work authorization and sponsorship are only proposals.** They appear marked **Approve** and are filled only after you tick approve for each one. They are never sent to the AI, cached, or saved for reuse. Consent and legal declarations always stay with you.
+- If a preference isn't set, the question stays in the review with a note ("…isn't in your Preferences yet") and nothing is invented. The AI may still suggest options to pick from for non-sensitive ones (e.g. notice period), but never answers for you. Work authorization only answers "Yes" for a country you listed; for any other country it asks you.
+- Non-sensitive preferences (notice period, locations, arrangement, reason for changing jobs) are given to the AI as background for other answers. Salary, authorization and sponsorship are not.
+- **Changing preferences invalidates everything based on the old ones:** cached AI answers (the preferences are part of the cache key) and answers already prepared in the popup, which are discarded the next time they'd be used.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET` / `PUT /api/v1/profiles/{profile_id}/preferences` | Read / replace the preferences (empty or omitted fields mean "not set") |
+| `GET /api/v1/profiles/{profile_id}/applications/context` | Version stamp of profile, CV and preferences, used to detect outdated prepared answers |
+
 ### Tracking applications
 
 After you submit an application on the website, click **✓ Mark as applied** in the popup (it becomes the main button once the form is filled). Job Fellow can't see whether a form was really sent, so counting is always your click. It saves the job (title, company, link, date) to your history and **clears the current job and its prepared answers**, so the next job starts fresh. **Discard** forgets a job without counting it.

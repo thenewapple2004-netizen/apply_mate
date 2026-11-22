@@ -1122,3 +1122,41 @@ html {
 .applied-bar.highlight {
   justify-content: space-between;
 }
+
+/* ---- Preferences and approval ----------------------------------------------- */
+
+.pref-group {
+  padding: 8px 10px;
+}
+
+.pref-group legend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.answer-row .approve {
+  padding: 6px 8px;
+  border: 1px dashed var(--warn);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.source.preference {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.cv-field select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+}

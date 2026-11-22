@@ -88,6 +88,18 @@
             <option value="2m+">2 months or more</option>
           </select>
 
+          <label for="salary">What are your monthly salary expectations?</label>
+          <input id="salary" name="salary" type="text" autocomplete="off" />
+
+          <p class="question" id="sponsor_q">Will you now or in the future require visa sponsorship from Nimbus Pay?</p>
+          <div class="choices" role="radiogroup" aria-labelledby="sponsor_q">
+            <label><input type="radio" name="sponsorship" value="yes" /> Yes</label>
+            <label><input type="radio" name="sponsorship" value="no" /> No</label>
+          </div>
+
+          <label for="reason">What is your reason for leaving your current job?</label>
+          <textarea id="reason" name="reason" rows="3"></textarea>
+
           <label for="timing">Are you comfortable working from 11 AM to 2 PM PKT for overlap with our team?</label>
           <input id="timing" name="timing" type="text" autocomplete="off" />
         </fieldset>

@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 FieldType = Literal["text", "email", "tel", "url", "number", "date", "textarea", "select", "radio", "checkbox"]
-Source = Literal["profile", "cv", "saved", "ai", "none"]
+Source = Literal["profile", "preference", "cv", "saved", "ai", "none"]
 
 
 class _Strict(BaseModel):
@@ -53,6 +53,11 @@ class Answer(BaseModel):
     # picked. Never filled in automatically.
     suggestions: list["Suggestion"] = []
     cached: bool = False  # reused from an earlier identical question (no AI call)
+    # Salary, work authorization and sponsorship answers come from the applicant's
+    # preferences but are only proposals: the user must approve them before they are filled.
+    needs_approval: bool = False
+    # Which preference this question is about (e.g. "salary"), even when it isn't set yet.
+    preference: str | None = None
 
 
 class Suggestion(BaseModel):
@@ -65,6 +70,13 @@ class PrepareResponse(BaseModel):
     ai_used: bool
     ai_error: str | None = None
     cache_hits: int = 0  # answers reused instantly, without the AI
+    # Changes whenever the profile, CV or preferences change; the extension drops
+    # answers prepared under an older version.
+    context_version: str = ""
+
+
+class ContextVersion(BaseModel):
+    version: str
 
 
 class SavedAnswerIn(_Strict):

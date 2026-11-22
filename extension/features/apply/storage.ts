@@ -41,6 +41,8 @@ export interface PreparedPage {
   aiError: string | null;
   /** How many answers were reused instantly (no AI call). */
   cacheHits?: number;
+  /** The backend's context version when these answers were prepared. */
+  contextVersion?: string;
   /** Result of the last fill, per field id. */
   fillStatus: Record<string, FillStatus> | null;
 }
@@ -82,6 +84,12 @@ export async function savePrepared(page: PreparedPage): Promise<void> {
 
 export async function clearPrepared(page: Pick<PreparedPage, 'profileId' | 'jobId' | 'page'>): Promise<void> {
   await browser.storage.local.remove(preparedPrefix(page.profileId, page.jobId) + page.page);
+}
+
+/** Discards every prepared answer for a profile (its job is kept). Used when something the
+ *  answers were based on changes, such as the profile's preferences. */
+export async function forgetPrepared(profileId: string): Promise<void> {
+  await removeByPrefix(preparedPrefix(profileId));
 }
 
 /** Removes everything stored for a profile (called when the profile is deleted). */

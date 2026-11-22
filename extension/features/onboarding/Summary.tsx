@@ -8,13 +8,14 @@ import type { OnboardingState } from './api.ts';
 interface Props {
   state: OnboardingState;
   onEdit: () => void;
+  onPreferences: () => void;
   onReplace: () => void;
   onReview: () => void;
   onDeleteProfile: () => Promise<void>;
 }
 
 /** What a finished profile looks like on reopening: details, resume, secondary actions. */
-export function Summary({ state, onEdit, onReplace, onReview, onDeleteProfile }: Props) {
+export function Summary({ state, onEdit, onPreferences, onReplace, onReview, onDeleteProfile }: Props) {
   const { profile, resume, cv, analysis } = state;
   const [preview, setPreview] = useState<{ kind: 'loading' } | { kind: 'ready'; text: string } | { kind: 'error'; message: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -92,6 +93,9 @@ export function Summary({ state, onEdit, onReplace, onReview, onDeleteProfile }:
       <div className="actions secondary-actions">
         <button type="button" className="btn small" onClick={onEdit}>
           Edit details
+        </button>
+        <button type="button" className="btn small" onClick={onPreferences}>
+          Preferences
         </button>
         {resume && (
           <button type="button" className="btn small" onClick={() => void togglePreview()} aria-expanded={Boolean(preview)}>
