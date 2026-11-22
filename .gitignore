@@ -16,6 +16,7 @@ Thumbs.db
 # Node / WXT (extension)
 node_modules/
 extension/.output/
+extension/.output-test/
 extension/.wxt/
 *.log
 

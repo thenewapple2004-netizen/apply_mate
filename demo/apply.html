@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Apply – Backend Engineer (Python) – Nimbus Pay</title>
+    <link rel="stylesheet" href="demo.css" />
+  </head>
+  <body>
+    <header class="site">
+      <strong>Nimbus Pay</strong> <span>Careers</span>
+    </header>
+    <main class="application">
+      <p class="crumbs"><a href="index.html">← Back to job</a></p>
+      <h1>Apply: Backend Engineer (Python)</h1>
+
+      <form id="application" novalidate>
+        <fieldset>
+          <legend>Personal information</legend>
+          <label for="full_name">Full name *</label>
+          <input id="full_name" name="full_name" type="text" required autocomplete="off" />
+
+          <label for="email">Email *</label>
+          <input id="email" name="email" type="email" required autocomplete="off" />
+
+          <label for="phone">Phone number *</label>
+          <input id="phone" name="phone" type="tel" required autocomplete="off" />
+
+          <label for="linkedin">LinkedIn profile</label>
+          <input id="linkedin" name="linkedin" type="url" autocomplete="off" />
+
+          <label for="city">Current city</label>
+          <input id="city" name="city" type="text" autocomplete="off" />
+
+          <label for="resume">Resume / CV</label>
+          <input id="resume" name="resume" type="file" accept=".pdf,.docx" />
+        </fieldset>
+
+        <fieldset>
+          <legend>Experience</legend>
+          <label for="years">How many years of professional backend development experience do you have?</label>
+          <input id="years" name="years" type="number" min="0" max="50" />
+
+          <label for="experience_summary">Describe your most relevant experience for this role.</label>
+          <textarea id="experience_summary" name="experience_summary" rows="4"></textarea>
+
+          <label for="education">Highest level of education</label>
+          <select id="education" name="education">
+            <option value="">Select…</option>
+            <option value="high_school">High school</option>
+            <option value="bachelors">Bachelor's degree</option>
+            <option value="masters">Master's degree</option>
+            <option value="phd">PhD</option>
+          </select>
+
+          <p class="question" id="tech_q">Which of these technologies have you used professionally?</p>
+          <div class="choices" role="group" aria-labelledby="tech_q">
+            <label><input type="checkbox" name="tech" value="python" /> Python</label>
+            <label><input type="checkbox" name="tech" value="fastapi" /> FastAPI</label>
+            <label><input type="checkbox" name="tech" value="django" /> Django</label>
+            <label><input type="checkbox" name="tech" value="postgresql" /> PostgreSQL</label>
+            <label><input type="checkbox" name="tech" value="kubernetes" /> Kubernetes</label>
+            <label><input type="checkbox" name="tech" value="go" /> Go</label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Preferences</legend>
+          <p class="question" id="arrangement_q">Which work arrangement do you prefer?</p>
+          <div class="choices" role="radiogroup" aria-labelledby="arrangement_q">
+            <label><input type="radio" name="arrangement" value="onsite" /> On-site</label>
+            <label><input type="radio" name="arrangement" value="hybrid" /> Hybrid</label>
+            <label><input type="radio" name="arrangement" value="remote" /> Remote</label>
+          </div>
+
+          <p class="question" id="authorized_q">Are you legally authorized to work in Pakistan? *</p>
+          <div class="choices" role="radiogroup" aria-labelledby="authorized_q">
+            <label><input type="radio" name="authorized" value="yes" /> Yes</label>
+            <label><input type="radio" name="authorized" value="no" /> No</label>
+          </div>
+
+          <label for="notice">Notice period</label>
+          <select id="notice" name="notice">
+            <option value="">Select…</option>
+            <option value="immediate">Immediately</option>
+            <option value="2w">2 weeks</option>
+            <option value="1m">1 month</option>
+            <option value="2m+">2 months or more</option>
+          </select>
+
+          <label for="salary">What are your monthly salary expectations?</label>
+          <input id="salary" name="salary" type="text" autocomplete="off" />
+
+          <p class="question" id="sponsor_q">Will you now or in the future require visa sponsorship from Nimbus Pay?</p>
+          <div class="choices" role="radiogroup" aria-labelledby="sponsor_q">
+            <label><input type="radio" name="sponsorship" value="yes" /> Yes</label>
+            <label><input type="radio" name="sponsorship" value="no" /> No</label>
+          </div>
+
+          <label for="reason">What is your reason for leaving your current job?</label>
+          <textarea id="reason" name="reason" rows="3"></textarea>
+
+          <label for="goals">Where do you see yourself in five years?</label>
+          <textarea id="goals" name="goals" rows="3"></textarea>
+
+          <label for="timing">Are you comfortable working from 11 AM to 2 PM PKT for overlap with our team?</label>
+          <input id="timing" name="timing" type="text" autocomplete="off" />
+        </fieldset>
+
+        <fieldset>
+          <legend>Motivation</legend>
+          <label for="motivation">Why do you want to join Nimbus Pay? (cover letter)</label>
+          <textarea id="motivation" name="motivation" rows="6"></textarea>
+        </fieldset>
+
+        <label class="consent"><input type="checkbox" id="privacy" name="privacy" /> I agree to the Nimbus Pay privacy policy *</label>
+
+        <div class="buttons">
+          <button type="button" id="save_draft">Save draft</button>
+          <button type="submit" id="submit">Submit application</button>
+        </div>
+        <p id="result" role="status"></p>
+      </form>
+    </main>
+    <footer class="site">This is a local demo page for testing Job Fellow. Nothing is sent anywhere.</footer>
+    <script>
+      // Demo only: show what would be submitted, and record submit/draft clicks so
+      // tests can confirm the extension never presses them.
+      window.__demo = { submitted: 0, draftClicks: 0 };
+      document.getElementById('save_draft').addEventListener('click', () => {
+        window.__demo.draftClicks += 1;
+      });
+      document.getElementById('application').addEventListener('submit', (event) => {
+        event.preventDefault();
+        window.__demo.submitted += 1;
+        const data = new FormData(event.target);
+        const count = [...data.entries()].filter(([, v]) => v && !(v instanceof File && !v.name)).length;
+        document.getElementById('result').textContent =
+          `Demo: application "submitted" by you with ${count} answers. (Nothing was sent anywhere.)`;
+      });
+    </script>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-import { ConnectionStatus } from '@/components/ConnectionStatus.tsx';
+import { AiSettings } from '@/components/AiSettings.tsx';
 import { Onboarding } from '@/features/onboarding/Onboarding.tsx';
 
 function App() {
@@ -11,7 +11,7 @@ function App() {
 
       <Onboarding />
 
-      <ConnectionStatus />
+      <AiSettings />
 
       <footer className="status">v{browser.runtime.getManifest().version}</footer>
     </main>

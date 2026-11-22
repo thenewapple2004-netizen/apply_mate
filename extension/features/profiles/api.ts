@@ -1,32 +1,16 @@
-import { apiRequest } from '@/lib/api.ts';
+import { createProfile, deleteProfile, listProfiles, updateProfile } from '../../core/profiles.ts';
+import { ctx } from '@/lib/runtime.ts';
 
-export interface Profile {
-  id: string;
-  full_name: string;
-  email: string | null;
-  phone: string | null;
-  location: string | null;
-  linkedin_url: string | null;
-  created_at: string;
-  updated_at: string;
-}
+export type { Profile, ProfileInput } from '../../core/types.ts';
+import type { Profile, ProfileInput } from '../../core/types.ts';
 
-/** The editable fields. Empty strings are stored as null by the backend. */
-export type ProfileInput = Pick<
-  Profile,
-  'full_name' | 'email' | 'phone' | 'location' | 'linkedin_url'
->;
-
-const BASE = '/api/v1/profiles';
-
+/** Profiles live in this browser (chrome.storage.local). Empty strings are stored as null. */
 export const profilesApi = {
-  list: (signal?: AbortSignal) => apiRequest<Profile[]>(BASE, { signal }),
+  list: (_signal?: AbortSignal): Promise<Profile[]> => listProfiles(ctx),
 
-  create: (input: ProfileInput) => apiRequest<Profile>(BASE, { method: 'POST', body: input }),
+  create: (input: ProfileInput): Promise<Profile> => createProfile(ctx, input),
 
-  update: (id: string, changes: Partial<ProfileInput>) =>
-    apiRequest<Profile>(`${BASE}/${encodeURIComponent(id)}`, { method: 'PATCH', body: changes }),
+  update: (id: string, changes: Partial<ProfileInput>): Promise<Profile> => updateProfile(ctx, id, changes),
 
-  remove: (id: string) =>
-    apiRequest<void>(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  remove: (id: string): Promise<void> => deleteProfile(ctx, id),
 };

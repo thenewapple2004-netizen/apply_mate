@@ -1,108 +1,49 @@
-import { apiRequest } from '../../lib/api.ts';
+import { saveAnswers } from '../../core/answers.ts';
+import { applicationStats, listApplications, recordApplication, removeApplication } from '../../core/history.ts';
+import { compose, currentContextVersion, prepare } from '../../core/prepare.ts';
+import { ctx } from '@/lib/runtime.ts';
 
 import type { DetectedField } from './page-scripts.ts';
 
-export interface Job {
-  title: string;
-  company: string;
-  description: string;
-  url: string;
-}
-
-export interface PreparedAnswer {
-  field_id: string;
-  value: string | null;
-  values: string[];
-  /** Where the answer came from; 'user' once you edit it in the review. */
-  source: 'profile' | 'preference' | 'cv' | 'saved' | 'ai' | 'user' | 'none';
-  /** Salary, work authorization and sponsorship come from your preferences but are only
-   *  proposals: they're filled only after you approve them. */
-  needs_approval?: boolean;
-  approved?: boolean;
-  /** Which preference this question is about (e.g. "salary"), even when it isn't set. */
-  preference?: string | null;
-  note: string | null;
-  /** Choices to click for an unanswered text question (e.g. "Yes" / "No"), each with
-   *  the answer to use when picked (null: worded by the backend on click). */
-  suggestions?: { label: string; answer: string | null }[];
-  /** Reused from an earlier identical question: no AI call was needed. */
-  cached?: boolean;
-}
-
-export interface PrepareResponse {
-  answers: PreparedAnswer[];
-  ai_used: boolean;
-  ai_error: string | null;
-  cache_hits: number;
-  /** Changes whenever the profile, CV or preferences change (see contextVersion). */
-  context_version: string;
-}
-
-export interface JobApplication {
-  id: string;
-  title: string;
-  company: string;
-  url: string;
-  applied_at: string;
-  /** True when this job was already in the history (so it wasn't counted twice). */
-  already_recorded: boolean;
-}
-
-export interface ApplicationStats {
-  total: number;
-  today: number;
-  last_7_days: number;
-  last_30_days: number;
-}
-
-const base = (profileId: string) => `/api/v1/profiles/${encodeURIComponent(profileId)}`;
+export type {
+  ApplicationStats, JobApplication, JobInfo as Job, PrepareResponse, PreparedAnswer,
+} from '../../core/types.ts';
+import type { ApplicationStats, JobApplication, JobInfo as Job, PrepareResponse } from '../../core/types.ts';
 
 export const applyApi = {
-  prepare: (profileId: string, job: Job, fields: DetectedField[], refresh = false) =>
-    apiRequest<PrepareResponse>(`${base(profileId)}/applications/answers`, {
-      method: 'POST',
+  prepare: (profileId: string, job: Job, fields: DetectedField[], refresh = false): Promise<PrepareResponse> =>
+    prepare(ctx, profileId, {
+      job,
+      refresh, // true: ignore remembered answers and ask the AI again
       // Only the question itself; how to find it on the page stays in the extension.
-      body: {
-        job,
-        refresh, // true: ignore remembered answers and ask the AI again
-        fields: fields.map(({ id, label, type, required, options }) => ({ id, label, type, required, options })),
-      },
-      timeoutMs: 180_000, // the AI can take a while on long forms
+      fields: fields.map(({ id, label, type, required, options }) => ({ id, label, type, required, options })),
     }),
 
   /** The current version of everything answers are based on. Answers prepared under an
    *  older version are out of date. */
-  contextVersion: (profileId: string, signal?: AbortSignal) =>
-    apiRequest<{ version: string }>(`${base(profileId)}/applications/context`, { signal }),
+  contextVersion: async (profileId: string, _signal?: AbortSignal): Promise<{ version: string }> => ({
+    version: await currentContextVersion(ctx, profileId),
+  }),
 
   /** Records that the user submitted this job. Safe to repeat: the same job counts once. */
-  markApplied: (profileId: string, job: Pick<Job, 'title' | 'company' | 'url'>) =>
-    apiRequest<JobApplication>(`${base(profileId)}/applications`, {
-      method: 'POST',
-      body: { title: job.title, company: job.company, url: job.url },
-    }),
+  markApplied: (profileId: string, job: Pick<Job, 'title' | 'company' | 'url'>): Promise<JobApplication> =>
+    recordApplication(ctx, profileId, { title: job.title, company: job.company, url: job.url }),
 
-  listApplications: (profileId: string, signal?: AbortSignal) =>
-    apiRequest<JobApplication[]>(`${base(profileId)}/applications?limit=10`, { signal }),
+  listApplications: (profileId: string, _signal?: AbortSignal): Promise<JobApplication[]> =>
+    listApplications(ctx, profileId, 10),
 
   /** "Today" and "last 7 days" are counted in the user's own time zone. */
-  applicationStats: (profileId: string, signal?: AbortSignal) =>
-    apiRequest<ApplicationStats>(
-      `${base(profileId)}/applications/stats?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`,
-      { signal },
-    ),
+  applicationStats: (profileId: string, _signal?: AbortSignal): Promise<ApplicationStats> =>
+    applicationStats(ctx, profileId, Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
 
-  removeApplication: (profileId: string, applicationId: string) =>
-    apiRequest<void>(`${base(profileId)}/applications/${encodeURIComponent(applicationId)}`, { method: 'DELETE' }),
+  removeApplication: (profileId: string, applicationId: string): Promise<void> =>
+    removeApplication(ctx, profileId, applicationId),
 
   /** Writes a short answer from the choice the user clicked, keeping that choice. */
   compose: (profileId: string, job: Job, question: string, type: string, choice: string) =>
-    apiRequest<{ value: string; composed: boolean }>(`${base(profileId)}/applications/answers/compose`, {
-      method: 'POST',
-      body: { job, question, type, choice },
-      timeoutMs: 120_000, // includes the backend's retry if Gemini is briefly unavailable
-    }),
+    compose(ctx, profileId, { job, question, type: type as never, choice }),
 
-  saveAnswers: (profileId: string, answers: { question: string; answer: string }[]) =>
-    apiRequest<{ saved: number }>(`${base(profileId)}/answers`, { method: 'PUT', body: { answers } }),
+  saveAnswers: async (profileId: string, answers: { question: string; answer: string }[]) => ({
+    saved: await saveAnswers(ctx, profileId, answers),
+  }),
 };

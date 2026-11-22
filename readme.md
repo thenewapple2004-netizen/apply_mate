@@ -4,6 +4,20 @@ Shown to users as **Job Fellow** (working name; the repository and package names
 
 A browser extension and backend that autofill job applications from saved profiles and resumes. AI drafts the answers, and you review them before submitting.
 
+## Using it (no server, no cost)
+
+Job Fellow is a standalone Chrome extension. There is **no backend to run**: your profiles, resumes, answers and settings are stored in your browser (`chrome.storage.local`), and PDF/DOCX files are read inside the extension. The only network call is to Google's Gemini API, using **your own free API key**.
+
+1. Install: download the zip (or build it, see below), unzip it, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose the unzipped folder.
+2. Get a free key at https://aistudio.google.com/apikey, open Job Fellow, then **AI & data**, paste it, click **Save key** and then **Test**.
+3. Create a profile, upload your resume, and apply. Nothing is ever submitted for you.
+
+Your data stays on your computer. The resume text and job details are sent to Gemini only when you use AI. **AI & data** also exports or imports a backup (the API key is never included) and deletes everything.
+
+Sharing it is free via a GitHub release zip (Load unpacked), or a one-time US$5 Google fee for the Chrome Web Store.
+
+> `backend/` and the Docker setup below are the earlier server version. The extension no longer uses them; they are kept for reference.
+
 ## Layout
 
 | Path | What it is |
@@ -244,14 +258,20 @@ The top of the popup shows jobs applied in total, today and in the last 7 days (
 
 ### Demo job application
 
-The backend serves a demo posting and application form at **http://127.0.0.1:8000/demo/** (nothing is sent anywhere; Submit only shows a message).
+Run `npm.cmd run demo` in `extension/` and open **http://127.0.0.1:8080/** (nothing is sent anywhere; Submit only shows a message). The pages are in `demo/`. The normal build only gets access to a page when you open Job Fellow on it from the toolbar; the `build:test` variant below can also reach this address, for end-to-end tests.
 
 ## Extension
 
 ```powershell
 cd extension
 npm.cmd install
-npm.cmd run build
+npm.cmd run build     # extension/.output/chrome-mv3
+npm.cmd run zip       # extension/.output/job-fellow-extension-<version>-chrome.zip
+npm.cmd test          # unit tests for the logic in extension/core
+npm.cmd run demo      # demo job pages at http://127.0.0.1:8080/
+npm.cmd run build:test  # variant in .output-test that can also reach the demo pages
 ```
 
-Load `extension/.output/chrome-mv3` in Chrome with **Load unpacked** at `chrome://extensions` (Developer mode on), or click the reload icon on the ApplyMate card after rebuilding. The extension asks only for `storage` and access to `http://127.0.0.1:8000` / `http://localhost:8000`.
+Load `extension/.output/chrome-mv3` in Chrome with **Load unpacked** at `chrome://extensions` (Developer mode on), or click the reload icon after rebuilding. Permissions: `storage`, `unlimitedStorage`, `activeTab`, `scripting`, and access to `https://generativelanguage.googleapis.com` only.
+
+All logic lives in `extension/core/` (plain TypeScript with no browser APIs, unit-tested); `extension/features/*/api.ts` connect it to the screens.

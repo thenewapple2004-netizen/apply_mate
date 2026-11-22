@@ -1,6 +1,9 @@
-import { apiRequest } from '../../lib/api.ts';
+import { getPreferences, savePreferences } from '../../core/preferences.ts';
+import { ctx } from '@/lib/runtime.ts';
 
-export type Arrangement = 'remote' | 'hybrid' | 'onsite';
+export type { Arrangement, Preferences } from '../../core/types.ts';
+export { EMPTY_PREFERENCES } from '../../core/types.ts';
+import type { Arrangement, Preferences } from '../../core/types.ts';
 
 export const ARRANGEMENTS: { value: Arrangement; label: string }[] = [
   { value: 'remote', label: 'Remote' },
@@ -8,32 +11,7 @@ export const ARRANGEMENTS: { value: Arrangement; label: string }[] = [
   { value: 'onsite', label: 'On-site' },
 ];
 
-/** Every field is optional: empty / null means "not set". */
-export interface Preferences {
-  salary_expectation: string | null;
-  notice_period: string | null;
-  preferred_locations: string[];
-  work_arrangements: Arrangement[];
-  work_authorization_countries: string[];
-  requires_sponsorship: boolean | null;
-  change_reason: string | null;
-  career_goals: string | null;
-}
-
-export const EMPTY_PREFERENCES: Preferences = {
-  salary_expectation: null,
-  notice_period: null,
-  preferred_locations: [],
-  work_arrangements: [],
-  work_authorization_countries: [],
-  requires_sponsorship: null,
-  change_reason: null,
-  career_goals: null,
-};
-
-const url = (profileId: string) => `/api/v1/profiles/${encodeURIComponent(profileId)}/preferences`;
-
-/** Only the editable fields: the server rejects anything else (e.g. the `updated_at` it returns). */
+/** Only the editable fields (the saved record also has an `updated_at`). */
 function editable(p: Preferences): Preferences {
   return {
     salary_expectation: p.salary_expectation,
@@ -48,8 +26,8 @@ function editable(p: Preferences): Preferences {
 }
 
 export const preferencesApi = {
-  get: async (profileId: string, signal?: AbortSignal) =>
-    editable(await apiRequest<Preferences>(url(profileId), { signal })),
-  save: async (profileId: string, preferences: Preferences) =>
-    editable(await apiRequest<Preferences>(url(profileId), { method: 'PUT', body: editable(preferences) })),
+  get: async (profileId: string, _signal?: AbortSignal): Promise<Preferences> =>
+    editable(await getPreferences(ctx, profileId)),
+  save: async (profileId: string, preferences: Preferences): Promise<Preferences> =>
+    editable(await savePreferences(ctx, profileId, editable(preferences))),
 };

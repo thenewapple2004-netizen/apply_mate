@@ -1,0 +1,192 @@
+import {
+  aiInvalidResponse, aiNotConfigured, aiOffline, aiQuota, aiRejected, aiTimeout, aiUnavailable, ApiError,
+} from './errors.ts';
+
+/** JSON-schema subset that Gemini's `responseSchema` understands. */
+export type JsonSchema = Record<string, unknown>;
+
+export interface AiRequest<T> {
+  system: string;
+  prompt: string;
+  schema: JsonSchema;
+  /** Turns the model's parsed JSON into a clean value; throws if it can't be used. */
+  parse: (json: unknown) => T;
+}
+
+export interface StructuredAi {
+  generate<T>(request: AiRequest<T>): Promise<{ data: T; model: string }>;
+}
+
+export interface GeminiSettings {
+  apiKey: string;
+  model: string;
+  fallbackModel: string;
+  /** Switch "thinking" off for speed. */
+  thinkingOff: boolean;
+  timeoutMs: number;
+  maxAttempts: number;
+}
+
+export const DEFAULT_MODEL = 'gemini-3-flash-preview';
+export const DEFAULT_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
+export const MODEL_CHOICES = [
+  'gemini-3-flash-preview',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-lite-latest',
+  'gemini-2.5-flash',
+];
+
+export const DEFAULT_GEMINI: Omit<GeminiSettings, 'apiKey'> = {
+  model: DEFAULT_MODEL,
+  fallbackModel: DEFAULT_FALLBACK_MODEL,
+  thinkingOff: true,
+  timeoutMs: 45_000,
+  maxAttempts: 2,
+};
+
+const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
+
+interface Options {
+  fetch?: Fetch;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** Gemini over plain HTTPS. The key goes in a header, never in the URL. */
+export class GeminiClient implements StructuredAi {
+  private readonly settings: GeminiSettings;
+  private readonly fetchImpl: Fetch;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly noThinking = new Set<string>();
+
+  constructor(settings: GeminiSettings, options: Options = {}) {
+    this.settings = settings;
+    this.fetchImpl = options.fetch ?? ((url, init) => fetch(url, init));
+    this.sleep = options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  }
+
+  async generate<T>(request: AiRequest<T>): Promise<{ data: T; model: string }> {
+    if (!this.settings.apiKey.trim()) throw aiNotConfigured();
+    const models = [this.settings.model];
+    if (this.settings.fallbackModel && this.settings.fallbackModel !== this.settings.model) {
+      models.push(this.settings.fallbackModel);
+    }
+    for (let i = 0; i < models.length; i++) {
+      const model = models[i] as string;
+      try {
+        return { data: await this.callModel(model, request), model };
+      } catch (error) {
+        const retryable = error instanceof ApiError && (error.status === 429 || error.status === 503 || error.status === 504);
+        if (!retryable || i + 1 === models.length) throw error;
+      }
+    }
+    throw aiUnavailable();
+  }
+
+  private async callModel<T>(model: string, request: AiRequest<T>): Promise<T> {
+    let last: ApiError = aiUnavailable();
+    let attempt = 0;
+    while (attempt < this.settings.maxAttempts) {
+      attempt += 1;
+      try {
+        const json = await this.post(model, request);
+        try {
+          return request.parse(json);
+        } catch {
+          throw aiInvalidResponse();
+        }
+      } catch (error) {
+        if (error instanceof RejectsThinking) {
+          this.noThinking.add(model);
+          attempt -= 1; // not a real failure: retry straight away
+          continue;
+        }
+        last = error instanceof ApiError ? error : aiUnavailable();
+      }
+      const retryable = last.status === 503 || last.status === 504 || last.status === 502 && last.message.includes('read');
+      if (!retryable || attempt >= this.settings.maxAttempts) break;
+      await this.sleep(500 * 2 ** (attempt - 1) + Math.random() * 300);
+    }
+    throw last;
+  }
+
+  private async post(model: string, request: AiRequest<unknown>): Promise<unknown> {
+    const generationConfig: Record<string, unknown> = {
+      temperature: 0,
+      responseMimeType: 'application/json',
+      responseSchema: request.schema,
+    };
+    if (this.settings.thinkingOff && !this.noThinking.has(model)) {
+      generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
+    const body = {
+      systemInstruction: { parts: [{ text: request.system }] },
+      contents: [{ role: 'user', parts: [{ text: request.prompt }] }],
+      generationConfig,
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.settings.timeoutMs);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': this.settings.apiKey.trim() },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError') throw aiTimeout();
+      throw aiOffline();
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw this.translate(response.status, text, model);
+    }
+    let payload: any;
+    try {
+      payload = await response.json();
+    } catch {
+      throw aiInvalidResponse();
+    }
+    const text: string | undefined = payload?.candidates?.[0]?.content?.parts
+      ?.map((p: { text?: string }) => p.text ?? '')
+      .join('');
+    if (!text) throw aiInvalidResponse('The AI returned an empty response. Please try again.');
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw aiInvalidResponse();
+    }
+  }
+
+  private translate(status: number, text: string, model: string): ApiError | RejectsThinking {
+    if (status === 400 && this.settings.thinkingOff && !this.noThinking.has(model) && /thinking/i.test(text)) {
+      return new RejectsThinking();
+    }
+    if (status === 429) {
+      return aiQuota(/perday/i.test(text.replace(/[_\s]/g, '')));
+    }
+    if (status === 400 && /api key/i.test(text)) {
+      return aiRejected('Gemini rejected the API key. Check it in the AI section.');
+    }
+    if (status === 401 || status === 403) {
+      return aiRejected('Gemini rejected the API key. Check it in the AI section.');
+    }
+    if (status === 404) {
+      return aiRejected('That Gemini model wasn’t found. Pick another model in the AI section.');
+    }
+    if (status === 408 || status >= 500) return aiUnavailable();
+    return aiRejected();
+  }
+}
+
+class RejectsThinking extends ApiError {
+  constructor() {
+    super('http', 'thinking setting rejected', 400);
+  }
+}

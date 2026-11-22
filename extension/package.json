@@ -1,5 +1,5 @@
 {
-  "name": "applymate-extension",
+  "name": "job-fellow-extension",
   "version": "0.1.0",
   "private": true,
   "description": "AI-powered assistant for job applications.",
@@ -12,9 +12,14 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "test": "node --test tests/core.test.ts",
+    "postinstall": "wxt prepare",
+    "build:test": "node scripts/build-test.mjs",
+    "demo": "node scripts/demo-server.mjs"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

@@ -1160,3 +1160,30 @@ html {
   font-size: 13px;
   font-weight: 400;
 }
+
+/* AI & data settings */
+.ai-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.ai-settings .field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.ai-settings .hint a {
+  color: var(--accent);
+}
+
+.connection > .notice {
+  margin: 10px 0 0;
+}

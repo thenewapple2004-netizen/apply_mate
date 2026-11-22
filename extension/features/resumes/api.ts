@@ -1,58 +1,38 @@
-import { apiRequest, apiUpload } from '../../lib/api.ts';
+import { createResume, deleteResume, getResume, listResumes, MAX_UPLOAD_BYTES, setPrimary } from '../../core/resumes.ts';
+import { ctx } from '@/lib/runtime.ts';
 
-export interface Resume {
-  id: string;
-  profile_id: string;
-  original_filename: string;
-  file_type: 'pdf' | 'docx';
-  size_bytes: number;
-  is_primary: boolean;
-  text_length: number;
-  has_text: boolean;
-  created_at: string;
-  updated_at: string;
-}
+export type { Resume, ResumeDetail } from '../../core/types.ts';
+import type { Resume, ResumeDetail } from '../../core/types.ts';
 
-export interface ResumeDetail extends Resume {
-  extracted_text: string;
-}
-
-export const MAX_RESUME_BYTES = 10 * 1024 * 1024;
+export const MAX_RESUME_BYTES = MAX_UPLOAD_BYTES;
 export const ACCEPTED_EXTENSIONS = ['pdf', 'docx'] as const;
 
-const base = (profileId: string) =>
-  `/api/v1/profiles/${encodeURIComponent(profileId)}/resumes`;
-const one = (profileId: string, resumeId: string) =>
-  `${base(profileId)}/${encodeURIComponent(resumeId)}`;
-
-/** Every call names the profile, and the backend checks the resume belongs to it. */
+/** Every call names the profile, and the resume must belong to it. */
 export const resumesApi = {
-  list: (profileId: string, signal?: AbortSignal) =>
-    apiRequest<Resume[]>(base(profileId), { signal }),
+  list: (profileId: string, _signal?: AbortSignal): Promise<Resume[]> => listResumes(ctx, profileId),
 
-  get: (profileId: string, resumeId: string, signal?: AbortSignal) =>
-    apiRequest<ResumeDetail>(one(profileId, resumeId), { signal }),
+  get: (profileId: string, resumeId: string, _signal?: AbortSignal): Promise<ResumeDetail> =>
+    getResume(ctx, profileId, resumeId),
 
-  upload: (
+  /** Reads the file's text here in the browser; the file itself is not kept. */
+  upload: async (
     profileId: string,
     file: File,
     options: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {},
-  ) => {
-    const form = new FormData();
-    form.append('file', file, file.name);
-    return apiUpload<Resume>(base(profileId), form, options);
+  ): Promise<Resume> => {
+    options.signal?.throwIfAborted();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    options.onProgress?.(1);
+    return createResume(ctx, profileId, file.name, bytes);
   },
 
-  setPrimary: (profileId: string, resumeId: string, primary: boolean) =>
-    apiRequest<Resume>(`${one(profileId, resumeId)}/primary`, {
-      method: primary ? 'PUT' : 'DELETE',
-    }),
+  setPrimary: (profileId: string, resumeId: string, primary: boolean): Promise<Resume> =>
+    setPrimary(ctx, profileId, resumeId, primary),
 
-  remove: (profileId: string, resumeId: string) =>
-    apiRequest<void>(one(profileId, resumeId), { method: 'DELETE' }),
+  remove: (profileId: string, resumeId: string): Promise<void> => deleteResume(ctx, profileId, resumeId),
 };
 
-/** Quick client-side check so obvious mistakes fail instantly; the backend validates contents. */
+/** Quick check so obvious mistakes fail instantly; the contents are validated when the file is read. */
 export function checkFileBeforeUpload(file: File): string | null {
   const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
   if (!(ACCEPTED_EXTENSIONS as readonly string[]).includes(extension)) {
