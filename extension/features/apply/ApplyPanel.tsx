@@ -4,6 +4,7 @@ import { describeError } from '../../lib/api.ts';
 
 import { applyApi, type Job, type PreparedAnswer } from './api.ts';
 import {
+  countPresent,
   type DetectedField,
   detectFields,
   extractJob,
@@ -51,6 +52,15 @@ const hasAnswer = (a: PreparedAnswer) => (a.value !== null && a.value.trim() !==
 const awaitsApproval = (a: PreparedAnswer) => hasAnswer(a) && Boolean(a.needs_approval) && !a.approved;
 /** An answer that will actually be filled: it has a value and, if required, was approved. */
 const usable = (a: PreparedAnswer) => hasAnswer(a) && !awaitsApproval(a);
+/** False when the page no longer shows most of the fields the answers were prepared for
+ *  (e.g. the next step of a multi-step form at the same address). */
+async function formStillMatches(tabId: number, page: PreparedPage): Promise<boolean> {
+  const items = page.fields.map((f) => ({ id: f.id, domId: f.locator.domId, name: f.locator.name }));
+  if (items.length < 3) return true;
+  const present = await runInPage(tabId, countPresent, items).catch(() => items.length);
+  return present / items.length >= 0.6;
+}
+const STEP_CHANGED = 'The form on this page changed (a new step?), so earlier answers were cleared. Prepare answers again.';
 const plain = (error: unknown) => describeError(error).replace(/^Unexpected error: /, '');
 
 /** Detect job -> prepare answers -> review -> fill the current page. */
@@ -82,6 +92,9 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
         if (latest && stored.contextVersion !== latest.version) {
           await clearPrepared(stored);
           setMessage({ kind: 'info', text: 'Your profile or preferences changed, so earlier answers were cleared. Prepare them again.' });
+        } else if (!(await formStillMatches(current.id, stored))) {
+          await clearPrepared(stored);
+          if (alive.current) setMessage({ kind: 'info', text: STEP_CHANGED });
         } else {
           setPage(stored);
         }
@@ -269,6 +282,12 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
         setMessage({ kind: 'error', text: 'This tab is now showing a different page. Prepare answers again for this page.' });
         return;
       }
+      if (!(await formStillMatches(current.id, page))) {
+        await clearPrepared(page);
+        setPage(null);
+        setMessage({ kind: 'info', text: STEP_CHANGED });
+        return;
+      }
       const fields = new Map(page.fields.map((f) => [f.id, f]));
       // Only answers that have a value and, where required, your approval.
       const instructions: FillInstruction[] = page.answers.filter(usable).flatMap((a) => {
@@ -424,7 +443,13 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
             <button
               type="button"
               className="btn"
-              onClick={() => setDraft({ title: '', company: '', description: '', url: tab?.url ?? '' })}
+              onClick={async () => {
+                // Read the address now: the tab state may not have loaded yet, and the address
+                // is what keeps the same job from being counted twice.
+                const current = await getCurrentTab().catch(() => tab);
+                if (current) setTab(current);
+                setDraft({ title: '', company: '', description: '', url: current?.url ?? '' });
+              }}
             >
               Enter manually
             </button>

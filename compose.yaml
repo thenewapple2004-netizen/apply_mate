@@ -2,8 +2,8 @@ services:
   db:
     image: postgres:16
     env_file: .env
-    ports:
-      - "5432:5432"
+    # No published port on purpose: the database holds personal data and only the backend
+    # (over the Compose network) needs it. For a SQL shell: docker compose exec db psql ...
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

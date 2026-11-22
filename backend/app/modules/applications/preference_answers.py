@@ -18,6 +18,7 @@ APPROVAL_KINDS = {"salary", "authorization", "sponsorship"}
 _SALARY = re.compile(r"\b(salary|salaries|compensation|remuneration|pay (expectations?|range|requirements?)|expected (pay|ctc|earnings?)|ctc)\b")
 _NOTICE = re.compile(r"\b(notice( period)?|how soon (can|could) you (start|join)|when (can|could) you (start|join)|earliest (start|joining)|availability to (start|join)|start date)\b")
 _CHANGE = re.compile(r"\b(reason|why)\b.*\b(leav\w*|chang\w*|looking|seeking|switch\w*|mov\w*)\b")
+_GOALS = re.compile(r"\b(career (goals?|aspirations?|objectives?|plans?)|long term (goals?|plans?)|where do you see yourself)\b")
 _LOCATIONS = re.compile(r"\b((preferred|desired|ideal) (work )?(locations?|cit(y|ies))|locations? preferences?|where (would|do) you (like|want|prefer) to work)\b")
 _ARRANGEMENT = re.compile(r"\b(work(ing)? (arrangement|model|mode|setup|style|preference|type)|remote(ly)?|hybrid|on ?site|in ?office|office based)\b")
 _AUTH = re.compile(r"\b(authori[sz]ed|authori[sz]ation|legally (able|eligible|entitled|permitted)|right to work|eligible to work|work permit|work eligibility)\b")
@@ -35,6 +36,7 @@ MISSING = {
     "authorization": "Where you're authorized to work isn't in your Preferences yet. Add it there, or answer here.",
     "sponsorship": "Your sponsorship needs aren't in your Preferences yet. Add them there, or answer here.",
     "change_reason": "Your reason for changing jobs isn't in your Preferences yet. Add it there, or answer here.",
+    "career_goals": "Your career goals aren't in your Preferences yet. Add them there, or answer here.",
 }
 
 
@@ -54,6 +56,8 @@ def kind(field: FormField) -> str | None:
         return "salary"
     if _CHANGE.search(label):
         return "change_reason"
+    if _GOALS.search(label):
+        return "career_goals"
     if _NOTICE.search(label):
         return "notice"
     if _LOCATIONS.search(label):
@@ -74,6 +78,7 @@ def is_missing(prefs: ApplicantPreferences | None, which: str) -> bool:
         "authorization": prefs.work_authorization_countries,
         "sponsorship": prefs.requires_sponsorship is not None,
         "change_reason": prefs.change_reason,
+        "career_goals": prefs.career_goals,
     }[which]
 
 
@@ -104,9 +109,9 @@ def answer(field: FormField, which: str, prefs: ApplicantPreferences | None) -> 
         return _from_text(field, prefs.salary_expectation or "", make)
     if which == "notice":
         return _from_text(field, prefs.notice_period or "", make)
-    if which == "change_reason":
+    if which in {"change_reason", "career_goals"}:
         if field.type in {"text", "textarea"}:
-            return make(value=prefs.change_reason)
+            return make(value=prefs.change_reason if which == "change_reason" else prefs.career_goals)
         return make(note="Answer this one yourself.")
     if which == "locations":
         return _locations(field, prefs.preferred_locations, make)

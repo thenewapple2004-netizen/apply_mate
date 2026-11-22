@@ -205,6 +205,7 @@ def _applicant(
             "preferred_locations": prefs.preferred_locations,
             "work_arrangements": prefs.work_arrangements,
             "reason_for_changing_jobs": prefs.change_reason,
+            "career_goals": prefs.career_goals,
         } if prefs else None,
         "saved_answers": [{"question": a.question, "answer": a.answer} for a in answers[:30]],
     })

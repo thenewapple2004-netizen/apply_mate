@@ -204,7 +204,7 @@ Permissions: `activeTab` + `scripting` (the page is read only when you open Job 
 
 ### Preferences
 
-**Profile & resume → Preferences** holds what you want and are allowed to do. Everything is optional and stored per profile in PostgreSQL: salary expectation, notice period, preferred locations, work arrangement (remote / hybrid / on-site), the countries you're authorized to work in, whether you need visa sponsorship, and your reason for changing jobs.
+**Profile & resume → Preferences** holds what you want and are allowed to do. Everything is optional and stored per profile in PostgreSQL: salary expectation, notice period, preferred locations, work arrangement (remote / hybrid / on-site), the countries you're authorized to work in, whether you need visa sponsorship, your reason for changing jobs, and your career goals. (The database port isn't published to your computer; use `docker compose exec db psql -U apply_mate -d apply_mate` for a SQL shell.)
 
 - Questions about these are answered **from your preferences, not by the AI**. A notice period, locations, arrangement or reason for changing jobs is filled directly.
 - **Salary, work authorization and sponsorship are only proposals.** They appear marked **Approve** and are filled only after you tick approve for each one. They are never sent to the AI, cached, or saved for reuse. Consent and legal declarations always stay with you.

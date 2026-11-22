@@ -53,6 +53,17 @@ export interface FillOutcome {
   newFields: number;
 }
 
+/** How many of the previously detected fields are still on the page. A step change in a
+ *  multi-step form (same address, different questions) makes most of them disappear. */
+export function countPresent(items: { id: string; domId: string | null; name: string | null }[]): number {
+  return items.filter(
+    (i) =>
+      document.querySelector(`[data-jobfellow-id="${CSS.escape(i.id)}"]`) ||
+      (i.domId && document.getElementById(i.domId)) ||
+      (i.name && document.querySelector(`[name="${CSS.escape(i.name)}"]`)),
+  ).length;
+}
+
 /** Reads the job posting: schema.org JobPosting data first, then the visible page. */
 export function extractJob(): DetectedJob {
   const tidy = (s: string) =>

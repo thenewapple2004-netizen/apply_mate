@@ -125,6 +125,9 @@ export function PreferencesForm({ profileId, onSaved, onCancel }: Props) {
           <Field label="Reason for changing jobs" error={fieldErrors.change_reason}>
             <textarea rows={3} value={prefs.change_reason ?? ''} onChange={(e) => set('change_reason', e.target.value || null)} disabled={saving} />
           </Field>
+          <Field label="Career goals" error={fieldErrors.career_goals}>
+            <textarea rows={3} value={prefs.career_goals ?? ''} onChange={(e) => set('career_goals', e.target.value || null)} disabled={saving} />
+          </Field>
         </Section>
 
         <Section title="Work authorization">

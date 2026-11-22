@@ -18,6 +18,7 @@ FULL = {
     "work_authorization_countries": ["Pakistan"],
     "requires_sponsorship": False,
     "change_reason": "I want to work on larger payment systems.",
+    "career_goals": "Grow into a staff engineer leading payments infrastructure.",
 }
 
 
@@ -54,7 +55,7 @@ def test_preferences_start_empty_and_every_field_is_optional(db_client: TestClie
 
     assert body == {
         "salary_expectation": None, "notice_period": None, "preferred_locations": [], "work_arrangements": [],
-        "work_authorization_countries": [], "requires_sponsorship": None, "change_reason": None, "updated_at": None,
+        "work_authorization_countries": [], "requires_sponsorship": None, "change_reason": None, "career_goals": None, "updated_at": None,
     }
     assert db_client.put(prefs_url(pid), json={}).status_code == 200
 
@@ -93,6 +94,7 @@ def test_lists_are_cleaned(db_client: TestClient, pid: str) -> None:
         {"salary_expectation": "x" * 201},
         {"notice_period": "x" * 101},
         {"change_reason": "x" * 2001},
+        {"career_goals": "x" * 2001},
         {"preferred_locations": ["x" * 101]},
         {"requires_sponsorship": "maybe"},
         {"unknown_field": 1},
@@ -230,6 +232,17 @@ def test_reason_for_changing_jobs(db_client: TestClient, ai: FakeProvider, pid: 
     assert a["value"] == FULL["change_reason"] and a["source"] == "preference" and a["needs_approval"] is False
 
 
+def test_career_goals_are_answered_from_preferences_or_asked(db_client: TestClient, ai: FakeProvider, pid: str) -> None:
+    ai.outcome = {"answers": []}
+    question = field("g", "Where do you see yourself in five years?", "textarea")
+    assert "Preferences" in by_id(prepare(db_client, pid, question))["g"]["note"]
+
+    db_client.put(prefs_url(pid), json=FULL)
+    a = by_id(prepare(db_client, pid, question))["g"]
+
+    assert a["value"] == FULL["career_goals"] and a["source"] == "preference" and a["needs_approval"] is False
+
+
 def test_work_authorization_needs_approval_and_is_never_guessed(db_client: TestClient, ai: FakeProvider, pid: str) -> None:
     db_client.put(prefs_url(pid), json=FULL)
     yes_no = options("Yes", "No")
@@ -285,7 +298,7 @@ def test_only_non_sensitive_preferences_reach_the_ai(db_client: TestClient, ai: 
     prepare(db_client, pid, field("m", "Why do you want to join Nimbus Pay?", "textarea"))
 
     prompt = ai.prompts[0]
-    assert "30 days" in prompt and "larger payment systems" in prompt and "hybrid" in prompt
+    assert "30 days" in prompt and "larger payment systems" in prompt and "hybrid" in prompt and "staff engineer" in prompt
     assert "400,000" not in prompt and "Pakistan" not in prompt and "sponsorship" not in prompt
 
 

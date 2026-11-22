@@ -56,6 +56,7 @@ class PreferencesIn(BaseModel):
     work_authorization_countries: Places = []
     requires_sponsorship: bool | None = None
     change_reason: Reason = None
+    career_goals: Reason = None
 
 
 class PreferencesRead(PreferencesIn):

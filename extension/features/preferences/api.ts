@@ -17,6 +17,7 @@ export interface Preferences {
   work_authorization_countries: string[];
   requires_sponsorship: boolean | null;
   change_reason: string | null;
+  career_goals: string | null;
 }
 
 export const EMPTY_PREFERENCES: Preferences = {
@@ -27,6 +28,7 @@ export const EMPTY_PREFERENCES: Preferences = {
   work_authorization_countries: [],
   requires_sponsorship: null,
   change_reason: null,
+  career_goals: null,
 };
 
 const url = (profileId: string) => `/api/v1/profiles/${encodeURIComponent(profileId)}/preferences`;
@@ -41,6 +43,7 @@ function editable(p: Preferences): Preferences {
     work_authorization_countries: p.work_authorization_countries,
     requires_sponsorship: p.requires_sponsorship,
     change_reason: p.change_reason,
+    career_goals: p.career_goals,
   };
 }
 
