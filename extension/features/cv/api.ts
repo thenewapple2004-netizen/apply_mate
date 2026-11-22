@@ -116,10 +116,3 @@ export const cvApi = {
       body: { ...data, source_analysis_id: sourceAnalysisId },
     }),
 };
-
-/** Opens the full CV page in a new tab (the popup is too small for reviewing a CV). */
-export function openCVPage(profileId: string, resumeId?: string) {
-  const params = new URLSearchParams({ profile: profileId });
-  if (resumeId) params.set('resume', resumeId);
-  void browser.tabs.create({ url: browser.runtime.getURL(`/cv.html?${params}`) });
-}

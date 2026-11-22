@@ -46,7 +46,16 @@ class _AICertification(BaseModel):
     date: str | None = None
 
 
+class _AIContact(BaseModel):
+    full_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    location: str | None = None
+    linkedin_url: str | None = None
+
+
 class CVExtraction(BaseModel):
+    contact: _AIContact = _AIContact()
     summary: str | None = None
     skills: list[str] = []
     technologies: list[str] = []
@@ -67,12 +76,14 @@ def _clean(value: object) -> object:
 
 
 def _clean_list(value: object) -> object:
-    """Trim items, drop blanks and case-insensitive duplicates, keep order."""
+    """Trim items, drop blanks/nulls and case-insensitive duplicates, keep order."""
     if not isinstance(value, list):
         return value
     seen: set[str] = set()
     out = []
     for item in value:
+        if item is None:
+            continue
         if isinstance(item, str):
             item = item.strip()
             if not item or item.lower() in seen:
@@ -120,7 +131,8 @@ class Project(_Strict):
     role: ShortText = None
     description: LongText = None
     technologies: ItemList = []
-    url: Annotated[str | None, BeforeValidator(_clean), Field(max_length=500)] = None
+    # The length limit applies to the text only, so an explicit null is accepted.
+    url: Annotated[Annotated[str, Field(max_length=500)] | None, BeforeValidator(_clean)] = None
 
 
 class Certification(_Strict):
@@ -158,6 +170,7 @@ class AnalysisRead(BaseModel):
     provider: str
     model: str
     data: CVData
+    contact: dict[str, str] = {}
     warnings: list[str]
     analyzed_at: datetime
     confirmed_at: datetime | None

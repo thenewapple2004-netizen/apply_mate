@@ -1,5 +1,7 @@
 # Apply Mate
 
+Shown to users as **Job Fellow** (working name; the repository and package names stay `apply_mate` until the brand is confirmed).
+
 A browser extension and backend that autofill job applications from saved profiles and resumes. AI drafts the answers, and you review them before submitting.
 
 ## Layout
@@ -151,13 +153,27 @@ docker compose up -d
 
 The key stays in the backend. The extension never sees it. Without a key, analysis returns a clear "isn't configured" message and everything else keeps working.
 
-### How it works
+### Onboarding (in the popup)
 
-1. In the popup, click **Analyze CV** on a resume. A full ApplyMate page opens in a new tab.
-2. The page explains that the resume's **text** (not the file) will be sent to Google Gemini, and nothing is sent until you click **I agree, analyze with Gemini**. The backend also refuses requests without `consent: true`.
-3. Gemini's result is a **draft**. Facts it names that don't appear in the resume text (companies, titles, institutions, certifications, projects) are listed under *Please double-check*. Missing information stays empty.
-4. Correct, add or remove anything, then click **Confirm and save**. Only then is it saved to the profile.
-5. **CV details** on the profile card reopens the saved details for editing at any time. Analysing another resume never overwrites saved details; confirming its draft replaces them, and the page says so first.
+Everything happens in the extension popup (shown as **Job Fellow**). No extra tabs open.
+
+1. **Profile:** choose a profile, or **+ New profile** and enter a name.
+2. **Resume:** upload a PDF or DOCX. It becomes the profile's resume.
+3. **Details:** choose **Suggest with AI** or **Fill in manually**. The AI option explains first that the resume's **text** (not the file) goes to Google Gemini; the backend also refuses analysis without `consent: true`. If AI isn't available (no key, quota, outage), the popup says why and you fill in the details yourself.
+4. **Review:** one form shows only what's missing or unconfirmed: contact fields the profile doesn't have yet, and CV items that aren't saved yet. AI suggestions are a draft. Facts not found in the resume text are listed under *Please double-check*. Correct or remove anything, then **Save details**.
+
+Reopening the popup shows the selected profile and its resume directly. Secondary actions:
+- **Edit details** shows the same form with all fields.
+- **Preview resume** shows the resume's text.
+- **Replace resume** uploads a new file; saved details are kept.
+- **Update from resume** reviews only the new items found in the current resume.
+
+Saving a review only fills empty contact fields and adds new items. It never overwrites details you already confirmed.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/profiles/{profile_id}/onboarding` | Current step (`resume`, `review` or `complete`), current resume, saved details, and the review form when needed |
+| `POST /api/v1/profiles/{profile_id}/onboarding/confirm` | Save reviewed details (`contact`, `cv`, `source_analysis_id`) by filling gaps and adding new items |
 
 Optional settings: `GEMINI_TIMEOUT_SECONDS` (default 60) and `GEMINI_MAX_ATTEMPTS` (default 3; covers timeouts, server errors and unreadable output). Quota/rate-limit errors (HTTP 429) are not retried; the user sees a "quota reached" message.
 

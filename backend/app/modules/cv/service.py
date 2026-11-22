@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.ai.errors import AIInvalidResponse
 from app.modules.ai.provider import StructuredAIProvider
+from app.modules.cv.contact import clean_contact
 from app.modules.cv.grounding import find_ungrounded
 from app.modules.cv.models import (
     CVAnalysis,
@@ -66,11 +67,13 @@ def analyze_resume(
         system=SYSTEM_INSTRUCTION, prompt=build_prompt(resume.extracted_text), schema=CVExtraction
     )
     try:
-        data = CVData.model_validate(result.data.model_dump())
-    except ValueError:
+        data = CVData.model_validate(result.data.model_dump(exclude={"contact"}))
+    except (ValueError, TypeError):
         # The AI produced something outside the limits (e.g. absurdly long fields).
+        # Never let unexpected AI output become a 500.
         raise AIInvalidResponse() from None
-    warnings = find_ungrounded(data, resume.extracted_text)
+    contact, contact_warnings = clean_contact(result.data, resume.extracted_text)
+    warnings = contact_warnings + find_ungrounded(data, resume.extracted_text)
 
     analysis = db.scalar(select(CVAnalysis).where(CVAnalysis.resume_id == resume.id))
     if analysis is None:
@@ -80,6 +83,7 @@ def analyze_resume(
     analysis.provider = provider.name
     analysis.model = result.model
     analysis.result = data.model_dump(mode="json")
+    analysis.contact = contact
     analysis.warnings = warnings
     analysis.confirmed_at = None
     db.commit()

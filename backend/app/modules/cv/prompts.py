@@ -11,6 +11,9 @@ Rules:
 - Copy names, titles and dates exactly as written (e.g. "Jan 2020", "2019 - Present").
   Do not convert, complete or guess dates.
 - If something is not in the resume, use null for single values and [] for lists.
+- `contact`: the applicant's own name, email, phone, location (city/country) and
+  LinkedIn profile URL, exactly as written in the resume; null when absent.
+  Never use a referee's or employer's contact details.
 - `is_current` is true only if the resume explicitly says the role is current
   (e.g. "Present", "Current", "Now"); otherwise null.
 - `summary`: the resume's own summary/profile/objective section, lightly cleaned up.

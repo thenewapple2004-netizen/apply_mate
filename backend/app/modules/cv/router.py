@@ -57,6 +57,7 @@ def _analysis_read(analysis: CVAnalysis) -> AnalysisRead:
         provider=analysis.provider,
         model=analysis.model,
         data=CVData.model_validate(analysis.result),
+        contact=dict(analysis.contact or {}),
         warnings=list(analysis.warnings or []),
         analyzed_at=analysis.updated_at,
         confirmed_at=analysis.confirmed_at,

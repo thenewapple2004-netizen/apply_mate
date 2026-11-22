@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from app.api.health import router as health_router
 from app.modules.cv.router import router as cv_router
+from app.modules.onboarding.router import router as onboarding_router
 from app.modules.profiles.router import router as profiles_router
 from app.modules.resumes.router import router as resumes_router
 
@@ -11,3 +12,4 @@ app.include_router(health_router)
 app.include_router(profiles_router)
 app.include_router(resumes_router)
 app.include_router(cv_router)
+app.include_router(onboarding_router)

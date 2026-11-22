@@ -33,9 +33,7 @@
 
 body {
   margin: 0;
-  width: 100%;
-  min-width: 300px;
-  max-width: 400px;
+  width: 380px;
   background: var(--bg);
   color: var(--fg);
 }
@@ -554,4 +552,289 @@ body {
 .resume-preview:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* ---- Onboarding --------------------------------------------------------- */
+
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.steps {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.steps li {
+  flex: 1;
+  padding-top: 6px;
+  border-top: 3px solid var(--border);
+  counter-increment: step;
+}
+
+.steps li::before {
+  content: counter(step) '. ';
+}
+
+.steps li.done {
+  border-color: var(--ok);
+}
+
+.steps li.current {
+  border-color: var(--accent);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.step-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.step-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.step-card .hint {
+  font-size: 12px;
+}
+
+.step-card.analyzing {
+  flex-direction: row;
+  align-items: center;
+  font-size: 13px;
+}
+
+.spinner {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+
+.new-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.new-profile input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+
+.notice.warn {
+  border: 1px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  color: var(--fg);
+}
+
+.notice.warn ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
+.form-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  margin: 0 -14px -12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;
+  background: var(--surface);
+}
+
+.profile-card .headline {
+  margin: 0;
+  font-size: 13px;
+}
+
+.profile-card .meta,
+.resume-line .meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.profile-card .meta a {
+  color: var(--accent);
+}
+
+.resume-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 4px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.resume-line .resume-name {
+  font-size: 12px;
+}
+
+.secondary-actions {
+  flex-wrap: wrap;
+}
+
+.danger-link {
+  color: var(--bad);
+}
+
+.delete-profile {
+  align-self: flex-start;
+  font-weight: 400;
+}
+
+/* ---- Details form (onboarding review + edit) ---------------------------- */
+
+.details-form,
+.cv-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cv-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cv-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cv-section-head h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.cv-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.cv-entry > .link-btn {
+  align-self: flex-end;
+}
+
+.cv-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cv-field input,
+.cv-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.cv-field textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.cv-field input::placeholder,
+.cv-field textarea::placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.cv-field input:focus-visible,
+.cv-field textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.cv-field.invalid input,
+.cv-field.invalid textarea {
+  border-color: var(--bad);
+}
+
+.cv-field .field-error {
+  font-weight: 400;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

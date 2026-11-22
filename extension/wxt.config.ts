@@ -6,10 +6,10 @@ export default defineConfig({
   // WXT emits Manifest V3 for Chrome; pinned explicitly so it never changes silently.
   manifestVersion: 3,
   manifest: {
-    name: 'ApplyMate',
+    name: 'Job Fellow',
     description: 'AI-powered assistant for job applications.',
     action: {
-      default_title: 'ApplyMate',
+      default_title: 'Job Fellow',
     },
     // Only the local backend. Extension pages with host permissions can call it
     // without the backend enabling CORS.

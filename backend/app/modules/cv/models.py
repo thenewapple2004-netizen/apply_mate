@@ -31,6 +31,8 @@ class CVAnalysis(Base):
     provider: Mapped[str] = mapped_column(String(50))
     model: Mapped[str] = mapped_column(String(100))
     result: Mapped[dict] = mapped_column(JSONB)  # CVData as JSON
+    # Suggested contact details (email, phone, location, linkedin_url), already validated.
+    contact: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     warnings: Mapped[list] = mapped_column(JSONB, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
