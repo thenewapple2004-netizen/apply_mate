@@ -1,6 +1,7 @@
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 
-import { ApiError } from '../../lib/api.ts';
+import { ApiError, describeError as describe } from '../../lib/api.ts';
+import { openCVPage } from '../cv/api.ts';
 
 import {
   checkFileBeforeUpload,
@@ -22,15 +23,6 @@ type Preview =
 
 const ACCEPT =
   '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-
-function describe(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.kind === 'network') return 'The backend is offline.';
-    if (error.kind === 'timeout') return 'The request timed out.';
-    return error.message;
-  }
-  return 'Something went wrong.';
-}
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
 
@@ -276,6 +268,16 @@ export function ResumeSection({ profileId }: Props) {
                   </div>
                 ) : (
                   <div className="actions">
+                    {resume.has_text && (
+                      <button
+                        type="button"
+                        className="btn small primary"
+                        onClick={() => openCVPage(profileId, resume.id)}
+                        title="Opens a page where you review the AI's results before anything is saved"
+                      >
+                        Analyze CV
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn small"

@@ -1,3 +1,5 @@
+import { openCVPage } from '../cv/api.ts';
+
 import type { Profile } from './api.ts';
 
 interface Props {
@@ -36,6 +38,9 @@ export function ProfileDetails({ profile, onEdit, onDelete }: Props) {
       <div className="actions">
         <button type="button" className="btn" onClick={onEdit}>
           Edit
+        </button>
+        <button type="button" className="btn" onClick={() => openCVPage(profile.id)}>
+          CV details
         </button>
         <button type="button" className="btn danger" onClick={onDelete}>
           Delete

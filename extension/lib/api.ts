@@ -30,6 +30,20 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A short, user-facing explanation of any error. Unexpected (non-API) errors
+ * keep their own message so the cause is visible instead of a generic text.
+ */
+export function describeError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.kind === 'network') return 'The backend is offline.';
+    if (error.kind === 'timeout') return 'The request timed out.';
+    return error.message;
+  }
+  if (error instanceof Error && error.message) return `Unexpected error: ${error.message}`;
+  return 'Something went wrong.';
+}
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface RequestOptions {
@@ -176,9 +190,10 @@ function errorFromBody(status: number, body: string): ApiError {
     for (const issue of detail as ValidationIssue[]) {
       const msg = (issue.msg ?? 'Invalid value').replace(/^Value error, /, '');
       const loc = issue.loc ?? [];
-      // Body fields arrive as ["body", "<field>"]; anything else is a general error.
-      if (loc[0] === 'body' && typeof loc[1] === 'string') {
-        fieldErrors[loc[1]] ??= msg;
+      // Body fields arrive as ["body", "<field>", ...]; nested ones are keyed by
+      // their path, e.g. "work_experience.1.company". Anything else is general.
+      if (loc[0] === 'body' && loc.length > 1) {
+        fieldErrors[loc.slice(1).join('.')] ??= msg;
       } else {
         general.push(msg);
       }

@@ -135,6 +135,43 @@ docker compose run --rm --no-deps --user root -v "${PWD}/samples:/out" backend p
 
 This writes them to a `samples/` folder in the project root; delete it when you're done.
 
+## CV analysis (Gemini)
+
+ApplyMate can read a resume's extracted text with Google Gemini and turn it into structured, editable CV details: summary, skills, technologies, work experience, education, projects and certifications.
+
+### Setup
+
+1. Get a Gemini API key at https://aistudio.google.com/apikey.
+2. In `.env`, set `GEMINI_API_KEY=...`. Optionally set `GEMINI_MODEL` (default `gemini-2.5-flash`).
+3. Recreate the backend so it reads the new values. `restart` doesn't reload `.env`:
+
+```powershell
+docker compose up -d
+```
+
+The key stays in the backend. The extension never sees it. Without a key, analysis returns a clear "isn't configured" message and everything else keeps working.
+
+### How it works
+
+1. In the popup, click **Analyze CV** on a resume. A full ApplyMate page opens in a new tab.
+2. The page explains that the resume's **text** (not the file) will be sent to Google Gemini, and nothing is sent until you click **I agree, analyze with Gemini**. The backend also refuses requests without `consent: true`.
+3. Gemini's result is a **draft**. Facts it names that don't appear in the resume text (companies, titles, institutions, certifications, projects) are listed under *Please double-check*. Missing information stays empty.
+4. Correct, add or remove anything, then click **Confirm and save**. Only then is it saved to the profile.
+5. **CV details** on the profile card reopens the saved details for editing at any time. Analysing another resume never overwrites saved details; confirming its draft replaces them, and the page says so first.
+
+Optional settings: `GEMINI_TIMEOUT_SECONDS` (default 60) and `GEMINI_MAX_ATTEMPTS` (default 3; covers timeouts, server errors and unreadable output). Quota/rate-limit errors (HTTP 429) are not retried; the user sees a "quota reached" message.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/v1/profiles/{profile_id}/resumes/{resume_id}/analysis` | Analyze with Gemini (body `{"consent": true}`) and store a draft |
+| `GET /api/v1/profiles/{profile_id}/resumes/{resume_id}/analysis` | The latest draft for that resume |
+| `GET /api/v1/profiles/{profile_id}/cv` | Confirmed CV details |
+| `PUT /api/v1/profiles/{profile_id}/cv` | Save (confirm or edit) CV details; pass `source_analysis_id` when confirming a draft |
+
+AI errors: 429 quota, 502 unreadable response or rejected request (bad key or model), 503 not configured or unavailable, 504 timeout.
+
+**Storage:** drafts are in `cv_analyses` (one per resume; they reference the resume instead of copying its text). Confirmed details are in `cv_details` plus `cv_work_experiences`, `cv_educations`, `cv_projects` and `cv_certifications`, keyed by profile. Deleting a profile deletes all of it. Deleting a resume removes its draft but keeps the confirmed details. Logs never contain resume text, AI output or the API key.
+
 ## Extension
 
 ```powershell

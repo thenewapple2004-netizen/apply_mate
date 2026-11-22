@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { ApiError } from '@/lib/api.ts';
+import { ApiError, describeError as describe } from '@/lib/api.ts';
 
 import {
   clearActiveProfileId,
@@ -14,13 +14,6 @@ import { ResumeSection } from '../resumes/ResumeSection.tsx';
 
 type LoadState = { kind: 'loading' } | { kind: 'ready' } | { kind: 'error'; message: string };
 type Mode = 'view' | 'create' | 'edit' | 'confirm-delete';
-
-function describe(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.kind === 'network' ? 'The backend is offline.' : error.message;
-  }
-  return 'Something went wrong.';
-}
 
 export function ProfilePanel() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -63,7 +56,10 @@ export function ProfilePanel() {
       }
       setLoad({ kind: 'ready' });
     } catch (error) {
-      if (!controller.signal.aborted) setLoad({ kind: 'error', message: describe(error) });
+      if (controller.signal.aborted) return;
+      // Errors here are network/storage failures and contain no profile data.
+      if (!(error instanceof ApiError)) console.error('Loading profiles failed:', error);
+      setLoad({ kind: 'error', message: describe(error) });
     }
   }, []);
 
