@@ -228,3 +228,17 @@ def test_fallback_setting_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
     assert GeminiSettings.from_env().fallback_model is None                    # explicitly off
     monkeypatch.setenv("GEMINI_FALLBACK_MODEL", "gemini-main")
     assert GeminiSettings.from_env().fallback_model is None                    # same as main: pointless
+
+
+def test_daily_quota_message_explains_the_daily_limit() -> None:
+    daily = genai_errors.ClientError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "x", "details": [
+        {"@type": "type.googleapis.com/google.rpc.QuotaFailure", "violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}})
+    per_minute = genai_errors.ClientError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "slow down"}})
+
+    with pytest.raises(AIQuotaExceeded) as day:
+        call(provider(daily)[0])
+    with pytest.raises(AIQuotaExceeded) as minute:
+        call(provider(per_minute)[0])
+
+    assert "daily quota" in day.value.message and "24 hours" in day.value.message
+    assert "minute" in minute.value.message

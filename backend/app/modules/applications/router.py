@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -10,7 +10,11 @@ from app.modules.ai.provider import StructuredAIProvider, get_ai_provider
 from app.modules.answers import service as saved
 from app.modules.applications import service
 from app.modules.ai.errors import AIError, AIInvalidResponse, AIQuotaExceeded, AIRejected, AITimeout
+from app.modules.applications import history
 from app.modules.applications.schemas import (
+    ApplicationIn,
+    ApplicationRead,
+    ApplicationStats,
     ComposeRequest,
     ComposeResponse,
     PrepareRequest,
@@ -73,6 +77,55 @@ async def compose_answer(
     except AIError as exc:
         code = next((c for t, c in _AI_STATUS.items() if isinstance(exc, t)), status.HTTP_503_SERVICE_UNAVAILABLE)
         raise HTTPException(code, exc.message) from None
+
+
+@router.post(
+    "/applications",
+    response_model=ApplicationRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={200: {"description": "Already recorded: not counted twice"}, 404: {"description": "Profile not found"}},
+)
+def record_application(
+    profile_id: uuid.UUID, body: ApplicationIn, response: Response, db: DbSession
+) -> ApplicationRead:
+    """Record that the applicant submitted an application. Safe to repeat for the same job."""
+    _require_profile(db, profile_id)
+    row, created = history.record(db, profile_id, body)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return ApplicationRead.model_validate(row).model_copy(update={"already_recorded": not created})
+
+
+@router.get("/applications", response_model=list[ApplicationRead])
+def list_applications(
+    profile_id: uuid.UUID, db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20
+) -> list[ApplicationRead]:
+    """Most recent applications first."""
+    _require_profile(db, profile_id)
+    return [ApplicationRead.model_validate(r) for r in history.list_recent(db, profile_id, limit)]
+
+
+@router.get("/applications/stats", response_model=ApplicationStats)
+def application_stats(
+    profile_id: uuid.UUID, db: DbSession, tz: Annotated[str, Query(max_length=64)] = "UTC"
+) -> ApplicationStats:
+    """Totals, with 'today' and 'last 7 days' counted in the applicant's time zone (IANA name)."""
+    _require_profile(db, profile_id)
+    try:
+        return history.stats(db, profile_id, tz)
+    except history.InvalidTimezone:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown time zone") from None
+
+
+@router.delete("/applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_application(profile_id: uuid.UUID, application_id: uuid.UUID, db: DbSession) -> Response:
+    """Remove an entry (e.g. one marked by mistake)."""
+    _require_profile(db, profile_id)
+    try:
+        history.remove(db, profile_id, application_id)
+    except history.ApplicationNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Application not found") from None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/answers", response_model=list[SavedAnswerRead])

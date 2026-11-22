@@ -1,6 +1,8 @@
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 FieldType = Literal["text", "email", "tel", "url", "number", "date", "textarea", "select", "radio", "checkbox"]
 Source = Literal["profile", "cv", "saved", "ai", "none"]
@@ -115,3 +117,48 @@ class AIAnswers(BaseModel):
 
 class AIComposed(BaseModel):
     value: str | None = None
+
+
+# ---- applied-jobs history ----
+
+
+class ApplicationIn(_Strict):
+    """A job the applicant confirms they applied to."""
+
+    title: Annotated[str, Field(max_length=300)] = ""
+    company: Annotated[str, Field(max_length=300)] = ""
+    url: Annotated[str, Field(max_length=2000)] = ""
+    # Optional, for entering past applications; defaults to now. Must include a timezone.
+    applied_at: AwareDatetime | None = None
+
+    @field_validator("title", "company", "url", mode="before")
+    @classmethod
+    def _strip(cls, value: object) -> object:
+        return " ".join(value.split()) if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _identify_the_job(self) -> "ApplicationIn":
+        if not (self.title or self.url):
+            raise ValueError("a job title or link is required")
+        if self.applied_at and self.applied_at > datetime.now(UTC) + timedelta(minutes=5):
+            raise ValueError("applied_at can't be in the future")
+        return self
+
+
+class ApplicationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    company: str
+    url: str
+    applied_at: datetime
+    already_recorded: bool = False  # true when this job was already in the history
+
+
+class ApplicationStats(BaseModel):
+    total: int
+    today: int
+    last_7_days: int  # today and the six days before
+    last_30_days: int
+    timezone: str

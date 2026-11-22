@@ -167,6 +167,11 @@ class GeminiProvider:
         if isinstance(error, genai_errors.APIError):
             code = getattr(error, "code", None)
             if code == 429:
+                if "perday" in str(error).lower().replace("_", "").replace(" ", ""):
+                    return AIQuotaExceeded(
+                        "The Gemini daily quota for this model is used up (free plans have a small daily limit). "
+                        "It resets within 24 hours: set GEMINI_MODEL to another model, or use a paid plan."
+                    )
                 return AIQuotaExceeded()
             if code in (401, 403):
                 return AIRejected(

@@ -11,6 +11,7 @@ import {
   type FillInstruction,
   type FillStatus,
 } from './page-scripts.ts';
+import { ApplicationsPanel } from './ApplicationsPanel.tsx';
 import { shouldRemember } from './sensitivity.ts';
 import {
   clearJob,
@@ -25,7 +26,7 @@ import {
 } from './storage.ts';
 import { type CurrentTab, getCurrentTab, runInPage } from './tab.ts';
 
-type Busy = null | 'detecting' | 'preparing' | 'filling';
+type Busy = null | 'detecting' | 'preparing' | 'filling' | 'marking';
 type Message = { kind: 'error' | 'success' | 'info'; text: string; action?: { label: string; run: () => void } } | null;
 
 const SOURCE_LABEL: Record<PreparedAnswer['source'], string> = {
@@ -57,6 +58,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
   const [busy, setBusy] = useState<Busy>(null);
   const [message, setMessage] = useState<Message>(null);
   const [composing, setComposing] = useState<string | null>(null);
+  const [statsVersion, setStatsVersion] = useState(0); // bumped to reload the applied-jobs numbers
   const alive = useRef(true);
 
   useEffect(() => {
@@ -180,6 +182,35 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
     void savePrepared(next);
   }
 
+  /** The user says they submitted this application: record it, then finish this job's
+   *  session (its confirmed job and prepared answers are cleared) so the next job starts fresh. */
+  async function markApplied() {
+    if (!job) return;
+    setMessage(null);
+    setBusy('marking');
+    try {
+      const record = await applyApi.markApplied(profileId, job);
+      await clearJob(profileId, job);
+      if (!alive.current) return;
+      setJob(null);
+      setPage(null);
+      setShowJD(false);
+      setStatsVersion((v) => v + 1);
+      setMessage({
+        kind: 'success',
+        text: record.already_recorded
+          ? 'This job was already in your list, so it wasn’t counted again. Ready for the next one.'
+          : '✓ Marked as applied. Ready for your next job.',
+      });
+    } catch (error) {
+      if (alive.current) {
+        setMessage({ kind: 'error', text: `Couldn't save it. Your job is still here, so you can try again. ${plain(error)}` });
+      }
+    } finally {
+      if (alive.current) setBusy(null);
+    }
+  }
+
   /** The user clicked a suggested choice for a text question: word it as their answer. */
   async function chooseSuggestion(field: DetectedField, choice: string) {
     if (!job || !page) return;
@@ -262,6 +293,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
   return (
     <section className="apply" aria-labelledby="apply-title">
       <h3 id="apply-title" className="sr-only">Apply</h3>
+      <ApplicationsPanel profileId={profileId} version={statsVersion} />
       <ol className="steps compact" aria-label="Application progress">
         {['Profile', 'Job', 'Answers', 'Review', 'Fill'].map((label, i) => (
           <li key={label} className={i + 1 < step ? 'done' : i + 1 === step ? 'current' : undefined} aria-current={i + 1 === step ? 'step' : undefined}>
@@ -323,6 +355,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
               <button
                 type="button"
                 className="link-btn"
+                title="Forget this job without counting it as applied"
                 onClick={async () => {
                   await clearJob(profileId, job);
                   setJob(null);
@@ -330,11 +363,23 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
                   setMessage(null);
                 }}
               >
-                Clear
+                Discard
               </button>
             </div>
           </div>
           {showJD && <pre className="resume-preview">{job.description || 'No description.'}</pre>}
+          <div className={page?.fillStatus ? 'applied-bar highlight' : 'applied-bar'}>
+            {page?.fillStatus && <span className="hint">Submitted it on the page?</span>}
+            <button
+              type="button"
+              className={page?.fillStatus ? 'btn primary' : 'btn small'}
+              onClick={() => void markApplied()}
+              disabled={busy !== null}
+              title="Count this job as applied and start fresh for the next one"
+            >
+              {busy === 'marking' ? 'Saving…' : '✓ Mark as applied'}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="step-card">

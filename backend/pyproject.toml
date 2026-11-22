@@ -13,6 +13,7 @@ dependencies = [
     "pypdf>=5.1,<7",             # PDF text extraction
     "defusedxml>=0.7",           # safe XML parsing for DOCX
     "google-genai>=1.20,<2",     # Gemini (official Google GenAI SDK)
+    "tzdata>=2024.1",            # time zone database (slim Docker images don't ship one)
 ]
 
 [project.optional-dependencies]

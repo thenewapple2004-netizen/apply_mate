@@ -202,6 +202,19 @@ Once a profile is set up, the popup shows the workflow **Profile → Job → Ans
 
 Permissions: `activeTab` + `scripting` (the page is read only when you open Job Fellow on it) and `storage`.
 
+### Tracking applications
+
+After you submit an application on the website, click **✓ Mark as applied** in the popup (it becomes the main button once the form is filled). Job Fellow can't see whether a form was really sent, so counting is always your click. It saves the job (title, company, link, date) to your history and **clears the current job and its prepared answers**, so the next job starts fresh. **Discard** forgets a job without counting it.
+
+The top of the popup shows jobs applied in total, today and in the last 7 days (counted in your own time zone); expand it for the recent history, each with a link, and ✕ to remove a mistake. The same job counts once, even from a different link to it (tracking parameters such as `utm_*` and a trailing `/apply` are ignored). History is kept per profile in PostgreSQL.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/v1/profiles/{profile_id}/applications` | Record an application (`title`, `company`, `url`); 201 new, 200 if already recorded |
+| `GET /api/v1/profiles/{profile_id}/applications?limit=` | Recent applications, newest first |
+| `GET /api/v1/profiles/{profile_id}/applications/stats?tz=` | `total`, `today`, `last_7_days`, `last_30_days` in the given IANA time zone |
+| `DELETE /api/v1/profiles/{profile_id}/applications/{id}` | Remove an entry |
+
 ### Speed and the answer cache
 
 - **Answer cache:** AI answers are remembered in PostgreSQL (`answer_cache`, per profile). A repeated question, on any site, is answered instantly without calling Gemini; the review shows "N reused instantly". An entry is reused only if the question, its options, your profile and confirmed CV are unchanged (editing either clears it), and, for job-specific questions such as cover letters, the job description is the same. Entries unused for 30 days are removed. **Regenerate** in the review asks the AI again.
