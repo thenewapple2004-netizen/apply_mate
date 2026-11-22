@@ -14,7 +14,9 @@ export default defineConfig({
     // Only the local backend. Extension pages with host permissions can call it
     // without the backend enabling CORS.
     host_permissions: ['http://127.0.0.1:8000/*', 'http://localhost:8000/*'],
-    // Remembers which profile is active (its ID only) between popup openings.
-    permissions: ['storage'],
+    // storage: remembers the active profile, the confirmed job and prepared answers.
+    // activeTab + scripting: read and fill the page you're on, only when you open
+    // Job Fellow on it. No access to all websites.
+    permissions: ['storage', 'activeTab', 'scripting'],
   },
 });

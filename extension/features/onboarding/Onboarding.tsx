@@ -4,6 +4,8 @@ import { ApiError, describeError } from '../../lib/api.ts';
 import { clearActiveProfileId, loadActiveProfileId, saveActiveProfileId } from '../profiles/active-profile.ts';
 import { type Profile, profilesApi } from '../profiles/api.ts';
 
+import { ApplyPanel } from '../apply/ApplyPanel.tsx';
+
 import { type OnboardingState, onboardingApi } from './api.ts';
 import { EditDetails } from './EditDetails.tsx';
 import { ResumeUpload } from './ResumeUpload.tsx';
@@ -233,13 +235,17 @@ function ProfileFlow({ profileId, onDelete }: { profileId: string; onDelete: () 
           {message}
         </p>
       )}
-      <Summary
-        state={s}
-        onEdit={() => { setMessage(null); setExtra('edit'); }}
-        onReplace={() => { setMessage(null); setExtra('replace'); }}
-        onReview={() => { setMessage(null); setExtra('review'); }}
-        onDeleteProfile={onDelete}
-      />
+      <ApplyPanel profileId={profileId} />
+      <details className="profile-details" open={Boolean(message) || s.analysis?.status === 'draft'}>
+        <summary>Profile &amp; resume</summary>
+        <Summary
+          state={s}
+          onEdit={() => { setMessage(null); setExtra('edit'); }}
+          onReplace={() => { setMessage(null); setExtra('replace'); }}
+          onReview={() => { setMessage(null); setExtra('review'); }}
+          onDeleteProfile={onDelete}
+        />
+      </details>
     </>
   );
 }

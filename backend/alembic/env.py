@@ -10,6 +10,7 @@ from app.db.base import Base
 import app.modules.profiles.models  # noqa: E402, F401
 import app.modules.resumes.models  # noqa: E402, F401
 import app.modules.cv.models  # noqa: E402, F401
+import app.modules.answers.models  # noqa: E402, F401
 
 config = context.config
 

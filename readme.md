@@ -188,6 +188,29 @@ AI errors: 429 quota, 502 unreadable response or rejected request (bad key or mo
 
 **Storage:** drafts are in `cv_analyses` (one per resume; they reference the resume instead of copying its text). Confirmed details are in `cv_details` plus `cv_work_experiences`, `cv_educations`, `cv_projects` and `cv_certifications`, keyed by profile. Deleting a profile deletes all of it. Deleting a resume removes its draft but keeps the confirmed details. Logs never contain resume text, AI output or the API key.
 
+## Applying to a job
+
+Once a profile is set up, the popup shows the workflow **Profile → Job → Answers → Review → Fill**:
+
+1. **Job:** on a job posting, click **Detect job on this page**. Job Fellow reads the posting (schema.org `JobPosting` data when the site has it, otherwise the page text) and shows the title, company and description for you to confirm or edit. The confirmed job is remembered when you move on to the application form.
+2. **Answers:** on the application form, click **Prepare answers for this page**. Job Fellow finds the visible questions (text fields, text areas, dropdowns, radio buttons, checkboxes) and prepares answers:
+   - contact fields straight from the profile;
+   - answers you approved before for the same question;
+   - Gemini for the rest, using only your profile, confirmed CV and the job description. Choices must match the page's options. Anything unsupported by your data is left blank ("Needs you").
+3. **Review:** edit or clear any answer.
+4. **Fill:** fills the approved answers on the page. Consent/declaration checkboxes and file uploads are left to you, and **Job Fellow never clicks Next, Apply or Submit**. Approved answers are saved for next time.
+
+Permissions: `activeTab` + `scripting` (the page is read only when you open Job Fellow on it) and `storage`.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/v1/profiles/{profile_id}/applications/answers` | Prepare answers for detected fields (`job`, `fields`) |
+| `GET` / `PUT /api/v1/profiles/{profile_id}/answers` | List / save approved answers |
+
+### Demo job application
+
+The backend serves a demo posting and application form at **http://127.0.0.1:8000/demo/** (nothing is sent anywhere; Submit only shows a message).
+
 ## Extension
 
 ```powershell

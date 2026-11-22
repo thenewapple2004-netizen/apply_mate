@@ -18,6 +18,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+COPY demo ./demo
 COPY tests ./tests
 
 # Run as a non-root user. /data/resumes is the mount point for the private
