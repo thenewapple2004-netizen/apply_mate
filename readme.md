@@ -74,3 +74,45 @@ docker compose run --rm -v ${PWD}/backend/alembic/versions:/app/alembic/versions
 ```
 
 Review the generated file, then rebuild (`docker compose up --build -d backend`) and run `alembic upgrade head`.
+
+Migrations are never applied automatically when the app starts. After pulling changes that add a migration, run:
+
+```powershell
+docker compose up --build -d
+docker compose exec backend alembic upgrade head
+```
+
+### Tests
+
+`docker compose run --rm backend pytest` runs all backend tests. Tests that need the database use a separate `apply_mate_test` database, which is created and migrated automatically and emptied before each test, so they never touch your real profiles.
+
+## Profiles
+
+ApplyMate stores multiple applicant profiles. In the popup you can create, edit and delete profiles and choose which one is active. Nothing is selected until you choose a profile. The popup remembers the active profile's ID (only the ID, in `chrome.storage.local`) and restores it when reopened, and forgets it if that profile is deleted.
+
+Profile separation keeps each applicant's data apart. It is **not** authentication: anyone who can reach the local backend can read and change every profile. The backend is published on `127.0.0.1` only.
+
+| Endpoint | Purpose | Success |
+| --- | --- | --- |
+| `GET /api/v1/profiles` | List profiles (oldest first) | 200 |
+| `POST /api/v1/profiles` | Create a profile | 201 |
+| `GET /api/v1/profiles/{id}` | Get one profile | 200 |
+| `PATCH /api/v1/profiles/{id}` | Update the fields sent; send `null` or `""` to clear an optional field | 200 |
+| `DELETE /api/v1/profiles/{id}` | Delete a profile | 204 |
+
+`full_name` is required (up to 200 characters). `email`, `phone`, `location` and `linkedin_url` are optional, and `linkedin_url` must be a `linkedin.com` address. Errors: 404 for an unknown ID, 422 for invalid input or a malformed ID.
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/profiles
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/profiles -Method Post -ContentType application/json -Body '{"full_name":"Arslan","email":"arslan@example.com"}'
+```
+
+## Extension
+
+```powershell
+cd extension
+npm.cmd install
+npm.cmd run build
+```
+
+Load `extension/.output/chrome-mv3` in Chrome with **Load unpacked** at `chrome://extensions` (Developer mode on), or click the reload icon on the ApplyMate card after rebuilding. The extension asks only for `storage` and access to `http://127.0.0.1:8000` / `http://localhost:8000`.

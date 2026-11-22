@@ -11,5 +11,10 @@ export default defineConfig({
     action: {
       default_title: 'ApplyMate',
     },
+    // Only the local backend. Extension pages with host permissions can call it
+    // without the backend enabling CORS.
+    host_permissions: ['http://127.0.0.1:8000/*', 'http://localhost:8000/*'],
+    // Remembers which profile is active (its ID only) between popup openings.
+    permissions: ['storage'],
   },
 });

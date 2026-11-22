@@ -1,3 +1,6 @@
+import { ConnectionStatus } from '@/components/ConnectionStatus.tsx';
+import { ProfilePanel } from '@/features/profiles/ProfilePanel.tsx';
+
 function App() {
   return (
     <main className="popup">
@@ -14,17 +17,11 @@ function App() {
         </p>
       </section>
 
-      <section className="profile">
-        <label htmlFor="profile-select">Application profile</label>
-        <select id="profile-select" disabled defaultValue="">
-          <option value="">No profiles yet</option>
-        </select>
-        <p className="hint">Profile setup is coming in a future update.</p>
-      </section>
+      <ProfilePanel />
 
-      <footer className="status">
-        v{browser.runtime.getManifest().version} · Setup coming soon
-      </footer>
+      <ConnectionStatus />
+
+      <footer className="status">v{browser.runtime.getManifest().version}</footer>
     </main>
   );
 }
