@@ -207,6 +207,31 @@ def test_ai_failures_return_clear_errors_and_store_nothing(
     assert db_client.get(f"/api/v1/profiles/{pid}/resumes/{rid}/analysis").status_code == 404
 
 
+def test_explicit_nulls_from_the_ai_are_accepted(db_client: TestClient, ai: FakeProvider, arslan) -> None:
+    """Real Gemini output uses explicit nulls (regression: a null project url caused a 500)."""
+    pid, rid = arslan
+    ai.outcome = {
+        "contact": {"full_name": None, "email": None, "phone": None, "location": None, "linkedin_url": None},
+        "summary": None,
+        "skills": ["Python", None, ""],
+        "technologies": None,  # a null list
+        "work_experience": [{"company": None, "title": "Engineer", "location": None, "start_date": None,
+                             "end_date": None, "is_current": None, "responsibilities": [None, "Built APIs"]}],
+        "education": [{"institution": None, "degree": None, "field_of_study": None, "start_date": None,
+                       "end_date": None, "details": []}],
+        "projects": [{"name": "Payments", "role": None, "description": None, "technologies": [None], "url": None}],
+        "certifications": [{"name": None, "issuer": None, "date": None}],
+    }
+
+    response = analyze(db_client, pid, rid)
+
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert data["skills"] == ["Python"]
+    assert data["work_experience"][0]["responsibilities"] == ["Built APIs"]
+    assert data["projects"][0]["url"] is None and data["projects"][0]["technologies"] == []
+
+
 def test_ai_output_outside_limits_is_an_invalid_response(db_client: TestClient, ai: FakeProvider, arslan) -> None:
     pid, rid = arslan
     ai.outcome = {**ARSLAN_EXTRACTION, "work_experience": [{"company": "x" * 5000}]}

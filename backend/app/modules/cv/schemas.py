@@ -12,6 +12,22 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 
 # ---- What the AI returns (no constraints: Gemini's schema support is limited) ----
+#
+# Lenient on purpose: real model output contains explicit nulls (a null list, or
+# null items inside one). A null list becomes [] here; null items are removed
+# when the result is validated as CVData.
+
+
+def _null_to_list(value: object) -> object:
+    return [] if value is None else value
+
+
+def _null_to_dict(value: object) -> object:
+    return {} if value is None else value
+
+
+StrList = Annotated[list[str | None], BeforeValidator(_null_to_list)]
+
 
 class _AIWork(BaseModel):
     company: str | None = None
@@ -20,7 +36,7 @@ class _AIWork(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     is_current: bool | None = None
-    responsibilities: list[str] = []
+    responsibilities: StrList = []
 
 
 class _AIEducation(BaseModel):
@@ -29,14 +45,14 @@ class _AIEducation(BaseModel):
     field_of_study: str | None = None
     start_date: str | None = None
     end_date: str | None = None
-    details: list[str] = []
+    details: StrList = []
 
 
 class _AIProject(BaseModel):
     name: str | None = None
     role: str | None = None
     description: str | None = None
-    technologies: list[str] = []
+    technologies: StrList = []
     url: str | None = None
 
 
@@ -55,14 +71,14 @@ class _AIContact(BaseModel):
 
 
 class CVExtraction(BaseModel):
-    contact: _AIContact = _AIContact()
+    contact: Annotated[_AIContact, BeforeValidator(_null_to_dict)] = _AIContact()
     summary: str | None = None
-    skills: list[str] = []
-    technologies: list[str] = []
-    work_experience: list[_AIWork] = []
-    education: list[_AIEducation] = []
-    projects: list[_AIProject] = []
-    certifications: list[_AICertification] = []
+    skills: StrList = []
+    technologies: StrList = []
+    work_experience: Annotated[list[_AIWork], BeforeValidator(_null_to_list)] = []
+    education: Annotated[list[_AIEducation], BeforeValidator(_null_to_list)] = []
+    projects: Annotated[list[_AIProject], BeforeValidator(_null_to_list)] = []
+    certifications: Annotated[list[_AICertification], BeforeValidator(_null_to_list)] = []
 
 
 # ---- Validated CV data (drafts, edits, saved details) ----
