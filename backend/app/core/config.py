@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 
 def get_database_url() -> str:
@@ -7,3 +8,8 @@ def get_database_url() -> str:
     if not url:
         raise RuntimeError("DATABASE_URL is not set")
     return url
+
+
+def get_resume_storage_dir() -> Path:
+    """Directory for uploaded resume files: a private Docker volume, never served publicly."""
+    return Path(os.environ.get("RESUME_STORAGE_DIR", "/data/resumes"))

@@ -107,6 +107,34 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/profiles
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/profiles -Method Post -ContentType application/json -Body '{"full_name":"Arslan","email":"arslan@example.com"}'
 ```
 
+## Resumes
+
+Each profile can have several resumes (PDF or DOCX, up to 10 MB each) and at most one primary resume. In the popup, select a profile, then use **+ Upload resume**. You can preview the extracted text, make a resume primary (or unset it), and delete it after confirming.
+
+- **Validation:** the file's contents are checked, not just its extension. Empty, damaged, password-protected, legacy `.doc`, mislabeled and unsupported files are rejected with a clear message (HTTP 413 for size, 415 for type, 422 for unreadable).
+- **Text extraction:** `pypdf` for PDF, and the document XML (parsed with `defusedxml`) for DOCX. There is no OCR: a scanned, image-only PDF is stored but marked "No readable text".
+- **Storage:** files are kept in the private `resume_files` Docker volume at `/data/resumes/<profile id>/<resume id>.<ext>`, readable only by the backend user. Their metadata and extracted text are in the `resumes` table. Deleting a resume or a profile also deletes the files.
+- **Privacy:** logs contain only IDs, file types and sizes, never filenames or resume text.
+
+| Endpoint | Purpose | Success |
+| --- | --- | --- |
+| `GET /api/v1/profiles/{profile_id}/resumes` | List resumes (metadata only) | 200 |
+| `POST /api/v1/profiles/{profile_id}/resumes` | Upload (multipart field `file`) | 201 |
+| `GET /api/v1/profiles/{profile_id}/resumes/{resume_id}` | Metadata plus extracted text | 200 |
+| `PUT /api/v1/profiles/{profile_id}/resumes/{resume_id}/primary` | Make primary (unsets the previous one) | 200 |
+| `DELETE /api/v1/profiles/{profile_id}/resumes/{resume_id}/primary` | Unset primary | 200 |
+| `DELETE /api/v1/profiles/{profile_id}/resumes/{resume_id}` | Delete resume and file | 204 |
+
+Every request is checked against the profile in the URL: a resume can't be read or changed through another profile's ID (404). This keeps applicants' data apart but is **not** security against other local users; add authentication before any deployment beyond your own machine.
+
+Sample files for manual testing (a PDF, a DOCX, a scanned PDF, a password-protected PDF and some invalid files):
+
+```powershell
+docker compose run --rm --no-deps --user root -v "${PWD}/samples:/out" backend python -m tests.samples /out
+```
+
+This writes them to a `samples/` folder in the project root; delete it when you're done.
+
 ## Extension
 
 ```powershell

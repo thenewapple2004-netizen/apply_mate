@@ -60,10 +60,20 @@ def test_engine(test_database_url: str) -> Iterator[Engine]:
 
 
 @pytest.fixture
-def db_client(test_engine: Engine) -> Iterator[TestClient]:
-    """A TestClient whose requests use the test database, emptied before each test."""
+def resume_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A private, empty resume storage directory for each test."""
+    folder = tmp_path / "resumes"
+    folder.mkdir()
+    monkeypatch.setenv("RESUME_STORAGE_DIR", str(folder))
+    return folder
+
+
+@pytest.fixture
+def db_client(test_engine: Engine, resume_dir: Path) -> Iterator[TestClient]:
+    """A TestClient whose requests use the test database and a temporary resume
+    folder, both emptied before each test."""
     with test_engine.begin() as conn:
-        conn.execute(text("TRUNCATE profiles"))
+        conn.execute(text("TRUNCATE profiles CASCADE"))
 
     factory = sessionmaker(bind=test_engine, autoflush=False, expire_on_commit=False)
 

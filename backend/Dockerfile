@@ -20,8 +20,13 @@ COPY alembic ./alembic
 COPY app ./app
 COPY tests ./tests
 
-# Run as a non-root user.
-RUN useradd --create-home --uid 1000 appuser && chown appuser:appuser /app
+# Run as a non-root user. /data/resumes is the mount point for the private
+# resume-files volume; creating it here gives a new volume the right owner.
+RUN useradd --create-home --uid 1000 appuser \
+    && chown appuser:appuser /app \
+    && mkdir -p /data/resumes \
+    && chown -R appuser:appuser /data \
+    && chmod 700 /data/resumes
 USER appuser
 
 EXPOSE 8000

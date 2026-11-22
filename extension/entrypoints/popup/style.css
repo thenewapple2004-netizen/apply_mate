@@ -417,3 +417,141 @@ body {
   color: var(--muted);
   text-align: center;
 }
+
+/* ---- Resumes ----------------------------------------------------------- */
+
+.resumes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-head h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.upload {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.upload-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+}
+
+.resume-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.resume {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.resume.primary {
+  border-color: var(--accent);
+}
+
+.resume-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.resume-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.tag.accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.resume-meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.resume .actions {
+  flex-wrap: wrap;
+}
+
+.confirm.inline {
+  padding: 8px 10px;
+  background: transparent;
+}
+
+.confirm.inline p {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.resume-preview {
+  max-height: 220px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.resume-preview:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

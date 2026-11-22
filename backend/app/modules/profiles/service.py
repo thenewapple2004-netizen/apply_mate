@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.profiles.models import Profile
 from app.modules.profiles.schemas import ProfileCreate, ProfileUpdate
+from app.modules.resumes import storage as resume_storage
 
 
 class ProfileNotFound(Exception):
@@ -42,4 +43,5 @@ def update_profile(db: Session, profile_id: uuid.UUID, data: ProfileUpdate) -> P
 def delete_profile(db: Session, profile_id: uuid.UUID) -> None:
     profile = get_profile(db, profile_id)
     db.delete(profile)
-    db.commit()
+    db.commit()  # the database cascades the delete to the profile's resume rows
+    resume_storage.delete_profile_files(profile_id)

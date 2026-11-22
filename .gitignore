@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Sample/test resumes generated locally (see readme). Real resumes never belong in Git.
+/samples/
+
 # OS / editors
 .DS_Store
 Thumbs.db

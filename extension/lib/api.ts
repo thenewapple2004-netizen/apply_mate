@@ -30,7 +30,7 @@ export class ApiError extends Error {
   }
 }
 
-export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface RequestOptions {
   method?: HttpMethod;
@@ -89,12 +89,79 @@ interface ValidationIssue {
   msg?: string;
 }
 
-/** Turns FastAPI's error body ({detail: string} or {detail: [...issues]}) into an ApiError. */
+export interface UploadOptions {
+  /** Called with 0–1 as the request body is sent. */
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+/**
+ * POST multipart form data, reporting upload progress (fetch can't).
+ * Errors are reported exactly like apiRequest's.
+ */
+export function apiUpload<T>(path: string, form: FormData, options: UploadOptions = {}): Promise<T> {
+  const { onProgress, signal, timeoutMs = 60_000 } = options;
+  return new Promise<T>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', new URL(path, API_BASE_URL));
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.timeout = timeoutMs;
+
+    const onAbort = () => xhr.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const done = () => signal?.removeEventListener('abort', onAbort);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    xhr.onload = () => {
+      done();
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(errorFromBody(xhr.status, xhr.responseText));
+        return;
+      }
+      try {
+        resolve(JSON.parse(xhr.responseText) as T);
+      } catch {
+        reject(new ApiError('invalid-response', 'Backend returned an invalid response', xhr.status));
+      }
+    };
+    xhr.onerror = () => {
+      done();
+      reject(new ApiError('network', 'Could not reach the backend'));
+    };
+    xhr.ontimeout = () => {
+      done();
+      reject(new ApiError('timeout', `No response within ${timeoutMs / 1000}s`));
+    };
+    xhr.onabort = () => {
+      done();
+      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+    };
+    xhr.send(form);
+  });
+}
+
 async function toHttpError(response: Response): Promise<ApiError> {
-  const status = response.status;
+  let body = '';
+  try {
+    body = await response.text();
+  } catch {
+    // Unreadable body: fall through to the generic message.
+  }
+  return errorFromBody(response.status, body);
+}
+
+/** Turns FastAPI's error body ({detail: string} or {detail: [...issues]}) into an ApiError. */
+function errorFromBody(status: number, body: string): ApiError {
   let detail: unknown;
   try {
-    detail = ((await response.json()) as { detail?: unknown }).detail;
+    detail = (JSON.parse(body) as { detail?: unknown }).detail;
   } catch {
     // Non-JSON error body: fall through to the generic message.
   }

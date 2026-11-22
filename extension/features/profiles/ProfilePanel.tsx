@@ -10,6 +10,7 @@ import {
 import { type Profile, type ProfileInput, profilesApi } from './api.ts';
 import { ProfileDetails } from './ProfileDetails.tsx';
 import { ProfileForm } from './ProfileForm.tsx';
+import { ResumeSection } from '../resumes/ResumeSection.tsx';
 
 type LoadState = { kind: 'loading' } | { kind: 'ready' } | { kind: 'error'; message: string };
 type Mode = 'view' | 'create' | 'edit' | 'confirm-delete';
@@ -217,6 +218,10 @@ export function ProfilePanel() {
           }}
         />
       )}
+
+      {/* Keyed by profile: switching profiles discards the previous profile's
+          resume list, previews and upload state. */}
+      {active && mode === 'view' && <ResumeSection key={active.id} profileId={active.id} />}
 
       {active && mode === 'confirm-delete' && (
         <div className="confirm" role="alertdialog" aria-labelledby="confirm-delete-title">
