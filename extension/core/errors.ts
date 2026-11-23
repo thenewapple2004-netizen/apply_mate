@@ -44,8 +44,9 @@ export const aiQuota = (daily = false): ApiError =>
     429,
   );
 
-export const aiUnavailable = (): ApiError =>
-  new ApiError('http', 'The AI service is temporarily unavailable. Please try again shortly.', 503);
+/** `detail` is Google's own explanation (e.g. "HTTP 503: model is overloaded"), so the real cause is visible. */
+export const aiUnavailable = (detail?: string): ApiError =>
+  new ApiError('http', `The AI service is temporarily unavailable. Please try again shortly.${detail ? ` (${detail})` : ''}`, 503);
 
 export const aiTimeout = (): ApiError =>
   new ApiError('http', 'The AI service took too long to respond. Please try again.', 504);

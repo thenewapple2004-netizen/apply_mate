@@ -44,6 +44,9 @@ export const DEFAULT_GEMINI: Omit<GeminiSettings, 'apiKey'> = {
   maxAttempts: 2,
 };
 
+/** Tried after the chosen models if those are overloaded, rate limited or unavailable. */
+const EXTRA_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -68,16 +71,14 @@ export class GeminiClient implements StructuredAi {
 
   async generate<T>(request: AiRequest<T>): Promise<{ data: T; model: string }> {
     if (!this.settings.apiKey.trim()) throw aiNotConfigured();
-    const models = [this.settings.model];
-    if (this.settings.fallbackModel && this.settings.fallbackModel !== this.settings.model) {
-      models.push(this.settings.fallbackModel);
-    }
+    // The chosen model, the chosen backup, then other fast models: one overloaded model shouldn't block you.
+    const models = [...new Set([this.settings.model, this.settings.fallbackModel, ...EXTRA_MODELS].filter(Boolean))];
     for (let i = 0; i < models.length; i++) {
       const model = models[i] as string;
       try {
         return { data: await this.callModel(model, request), model };
       } catch (error) {
-        const retryable = error instanceof ApiError && (error.status === 429 || error.status === 503 || error.status === 504);
+        const retryable = error instanceof ApiError && [404, 429, 502, 503, 504].includes(error.status ?? 0);
         if (!retryable || i + 1 === models.length) throw error;
       }
     }
@@ -182,7 +183,15 @@ export class GeminiClient implements StructuredAi {
     if (status === 404) {
       return aiRejected('That Gemini model wasn’t found. Pick another model in the AI section.');
     }
-    if (status === 408 || status >= 500) return aiUnavailable();
+    if (status === 408 || status >= 500) {
+      let reason = '';
+      try {
+        reason = String(JSON.parse(text)?.error?.message ?? '').slice(0, 160);
+      } catch {
+        reason = text.slice(0, 160);
+      }
+      return aiUnavailable(`${model}, HTTP ${status}${reason ? `: ${reason.replace(/\s+/g, ' ').trim()}` : ''}`);
+    }
     return aiRejected();
   }
 }
