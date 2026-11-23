@@ -13,7 +13,8 @@ import {
   type FillStatus,
 } from './page-scripts.ts';
 import { ApplicationsPanel } from './ApplicationsPanel.tsx';
-import { CONSENT, SENSITIVE, shouldRemember } from './sensitivity.ts';
+import { PREPARE_MESSAGE, type PrepareRequest, type PrepareRun, runKey, STALE_RUN_MS } from './background-prepare.ts';
+import { shouldRemember } from './sensitivity.ts';
 import {
   clearJob,
   clearPrepared,
@@ -72,7 +73,6 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
   const [page, setPage] = useState<PreparedPage | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [message, setMessage] = useState<Message>(null);
-  const [composing, setComposing] = useState<string | null>(null);
   // false: the user stepped back from the review to the "Prepare answers" step (answers are kept).
   const [reviewing, setReviewing] = useState(true);
   const [statsVersion, setStatsVersion] = useState(0); // bumped to reload the applied-jobs numbers
@@ -86,6 +86,13 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
       setJob(storedJob);
       setTab(current);
       if (current && storedJob) {
+        // Answers may still be being prepared in the background (the popup was closed meanwhile).
+        const run = (await browser.storage.local.get(runKey(profileId)))[runKey(profileId)] as PrepareRun | undefined;
+        if (run && run.jobId === storedJob.id && run.page === pageKey(current.url)) {
+          if (run.state === 'running' && Date.now() - Date.parse(run.startedAt) < STALE_RUN_MS) setBusy('preparing');
+          else if (run.state === 'error') setMessage({ kind: 'error', text: `Couldn't prepare answers. ${run.error ?? ''}` });
+          if (run.state !== 'running') await browser.storage.local.remove(runKey(profileId));
+        }
         const stored = await loadPrepared(profileId, storedJob, current.url);
         if (!stored) return;
         // Answers prepared before the profile, CV or preferences changed may be wrong now.
@@ -102,8 +109,35 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
         }
       }
     })();
+    // The background reports progress through storage: show the result as soon as it is saved.
+    const onChange = (changes: Record<string, { newValue?: unknown }>, area: string) => {
+      const run = area === 'local' ? (changes[runKey(profileId)]?.newValue as PrepareRun | undefined) : undefined;
+      if (!run) return;
+      void (async () => {
+        const [storedJob, current] = await Promise.all([loadJob(profileId), getCurrentTab().catch(() => null)]);
+        if (!alive.current || !storedJob || !current) return;
+        if (run.jobId !== storedJob.id || run.page !== pageKey(current.url)) return;
+        if (run.state === 'running') {
+          setBusy('preparing');
+          return;
+        }
+        await browser.storage.local.remove(runKey(profileId));
+        if (run.state === 'done') {
+          const stored = await loadPrepared(profileId, storedJob, current.url);
+          if (stored && alive.current) {
+            setPage(stored);
+            setReviewing(true);
+          }
+        } else if (alive.current) {
+          setMessage({ kind: 'error', text: `Couldn't prepare answers. ${run.error ?? ''}` });
+        }
+        if (alive.current) setBusy(null);
+      })();
+    };
+    browser.storage.onChanged.addListener(onChange);
     return () => {
       alive.current = false;
+      browser.storage.onChanged.removeListener(onChange);
     };
   }, [profileId]);
 
@@ -166,6 +200,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
 
   async function prepareAnswers(refresh = false) {
     if (!job) return;
+    let handedOff = false;
     setMessage(null);
     setBusy('preparing');
     try {
@@ -188,29 +223,24 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
         }
         return;
       }
+      // Hand over to the background: it keeps working (and saves the result) even if this popup closes.
       const { id: _id, profileId: _p, confirmedAt: _c, ...jobData } = job;
-      const result = await applyApi.prepare(profileId, jobData, detection.fields, refresh);
-      if (!alive.current) return;
-      const next: PreparedPage = {
+      const request: PrepareRequest = {
+        type: PREPARE_MESSAGE,
         profileId,
         jobId: job.id,
         page: pageKey(current.url),
-        createdAt: new Date().toISOString(),
+        job: jobData,
         fields: detection.fields,
         unsupported: detection.unsupported,
-        answers: result.answers,
-        aiError: result.ai_error,
-        cacheHits: result.cache_hits,
-        contextVersion: result.context_version,
-        fillStatus: null,
+        refresh,
       };
-      setPage(next);
-      setReviewing(true);
-      await savePrepared(next);
+      await browser.runtime.sendMessage(request);
+      handedOff = true; // the run's result arrives through storage (see the effect above)
     } catch (error) {
       if (alive.current) setMessage({ kind: 'error', text: `Couldn't prepare answers. ${plain(error)}` });
     } finally {
-      if (alive.current) setBusy(null);
+      if (alive.current && !handedOff) setBusy(null);
     }
   }
 
@@ -261,49 +291,6 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
       }
     } finally {
       if (alive.current) setBusy(null);
-    }
-  }
-
-  /** The user clicked a suggested choice for a text question: word it as their answer. */
-  async function chooseSuggestion(field: DetectedField, choice: string) {
-    if (!job || !page) return;
-    setComposing(field.id);
-    try {
-      const { id: _id, profileId: _p, confirmedAt: _c, ...jobData } = job;
-      const result = await applyApi.compose(profileId, jobData, field.label, field.type, choice);
-      if (alive.current) editAnswer(field.id, { value: result.value });
-    } catch (error) {
-      // AI unavailable: the choice itself is still a valid answer.
-      if (alive.current) {
-        editAnswer(field.id, { value: choice });
-        setMessage({ kind: 'info', text: `Used "${choice}" as written; AI couldn't phrase it (${plain(error)}).` });
-      }
-    } finally {
-      if (alive.current) setComposing(null);
-    }
-  }
-
-  /** The user asked the AI to write this one answer. It's marked as an AI draft for them to check. */
-  async function draftForField(field: DetectedField) {
-    if (!job || !page) return;
-    setComposing(field.id);
-    setMessage(null);
-    try {
-      const { id: _id, profileId: _p, confirmedAt: _c, ...jobData } = job;
-      const result = await applyApi.draft(profileId, jobData, field.label, field.type, field.options);
-      if (!alive.current) return;
-      const next = {
-        ...page,
-        answers: page.answers.map((a) =>
-          a.field_id === field.id ? { ...a, value: result.value, source: 'ai' as const, note: null, needs_approval: false } : a,
-        ),
-      };
-      setPage(next);
-      void savePrepared(next);
-    } catch (error) {
-      if (alive.current) setMessage({ kind: 'error', text: `Couldn't write that answer. ${plain(error)}` });
-    } finally {
-      if (alive.current) setComposing(null);
     }
   }
 
@@ -498,7 +485,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
           {busy === 'preparing' ? (
             <div className="step-card analyzing" role="status">
               <span className="spinner" aria-hidden="true" />
-              <span>Reading the form and preparing answers… Keep this popup open.</span>
+              <span>Reading the form and writing your answers… You can close this popup; it keeps working in the background.</span>
             </div>
           ) : !page || !reviewing ? (
             <div className="step-card">
@@ -523,11 +510,8 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
               page={page}
               answered={answered}
               busy={busy}
-              composing={composing}
               onEdit={editAnswer}
               onApprove={approveAnswer}
-              onChoose={(field, choice) => void chooseSuggestion(field, choice)}
-              onDraft={(field) => void draftForField(field)}
               onFill={() => void fill()}
               onBack={() => setReviewing(false)}
               onRegenerate={async () => {
@@ -552,11 +536,8 @@ function AnswerReview(props: {
   page: PreparedPage;
   answered: number;
   busy: Busy;
-  composing: string | null;
   onEdit: (fieldId: string, patch: Partial<PreparedAnswer>) => void;
   onApprove: (fieldId: string, approved: boolean) => void;
-  onChoose: (field: DetectedField, choice: string) => void;
-  onDraft: (field: DetectedField) => void;
   onFill: () => void;
   onRedo: () => void;
   onBack: () => void;
@@ -629,12 +610,8 @@ function AnswerReview(props: {
               field={field}
               answer={answer}
               status={page.fillStatus?.[field.id]}
-              composing={props.composing === field.id}
-              disabled={props.composing !== null}
               onEdit={props.onEdit}
               onApprove={props.onApprove}
-              onChoose={props.onChoose}
-              onDraft={props.onDraft}
             />
           ) : null;
         })}
@@ -653,47 +630,15 @@ function AnswerRow({
   field,
   answer,
   status,
-  composing,
-  disabled,
   onEdit,
   onApprove,
-  onChoose,
-  onDraft,
 }: {
   field: DetectedField;
   answer: PreparedAnswer;
   status: FillStatus | undefined;
-  composing: boolean;
-  disabled: boolean;
   onEdit: (id: string, patch: Partial<PreparedAnswer>) => void;
   onApprove: (id: string, approved: boolean) => void;
-  onChoose: (field: DetectedField, choice: string) => void;
-  onDraft: (field: DetectedField) => void;
 }) {
-  // One-click choices for a question that still needs the user.
-  let chips: { label: string; pick: () => void }[] = [];
-  if (!hasAnswer(answer)) {
-    if ((field.type === 'select' || field.type === 'radio') && field.options.length <= 8) {
-      chips = field.options.map((o) => ({ label: o.label, pick: () => onEdit(field.id, { value: o.value }) }));
-    } else if (field.type === 'text' || field.type === 'textarea' || field.type === 'number') {
-      chips = (answer.suggestions ?? []).map((s) => ({
-        label: s.label,
-        // Pre-written answers apply instantly; otherwise the backend words the choice.
-        pick: () => (s.answer ? onEdit(field.id, { value: s.answer }) : onChoose(field, s.label)),
-      }));
-    }
-  }
-  // "Write with AI" is offered for any open question except personal ones (salary, authorization,
-  // sponsorship, consent, demographics), which are always the applicant's own.
-  const canDraft =
-    !hasAnswer(answer) &&
-    field.type !== 'checkbox' &&
-    Boolean(field.label) &&
-    !SENSITIVE.test(field.label) &&
-    !CONSENT.test(field.label) &&
-    answer.preference !== 'salary' &&
-    answer.preference !== 'authorization' &&
-    answer.preference !== 'sponsorship';
   const id = `answer-${field.id}`;
   const pending = awaitsApproval(answer);
   const source = hasAnswer(answer) ? answer.source : 'none';
@@ -744,21 +689,6 @@ function AnswerRow({
         </label>
         <span className={pending ? 'source none' : `source ${source}`}>{pending ? 'Approve' : SOURCE_LABEL[source]}</span>
       </div>
-      {(chips.length > 0 || canDraft) && (
-        <div className="chips" role="group" aria-label={`Quick answers for: ${field.label}`}>
-          {chips.map((chip) => (
-            <button key={chip.label} type="button" className="chip" onClick={chip.pick} disabled={disabled}>
-              {chip.label}
-            </button>
-          ))}
-          {canDraft && (
-            <button type="button" className="chip draft" onClick={() => onDraft(field)} disabled={disabled}>
-              ✨ Write with AI
-            </button>
-          )}
-          {composing && <span className="hint">Writing your answer…</span>}
-        </div>
-      )}
       {control}
       {answer.needs_approval && hasAnswer(answer) && (
         <label className="check approve">

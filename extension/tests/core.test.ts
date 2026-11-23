@@ -6,7 +6,7 @@ import { getPreferences, savePreferences } from '../core/preferences.ts';
 import { createResume, listResumes, setPrimary, deleteResume, getResume } from '../core/resumes.ts';
 import { analyzeResume, getDetails, saveDetails } from '../core/cv.ts';
 import { confirm, getState } from '../core/onboarding.ts';
-import { compose, draftAnswer, prepare } from '../core/prepare.ts';
+import { compose, draftAnswer, prepare, profileAnswer } from '../core/prepare.ts';
 import { applicationStats, jobKey, listApplications, recordApplication, removeApplication } from '../core/history.ts';
 import { saveAnswers, listAnswers, matchOption } from '../core/answers.ts';
 import { exportBackup, importBackup, saveAiSettings, makeAi } from '../core/settings.ts';
@@ -411,4 +411,14 @@ test('matchOption: exact, then unambiguous word match', () => {
   assert.equal(matchOption(f, 'not sure'), null);
   assert.equal(matchOption(f, '3-5 years of experience'), '3-5 years');
   assert.equal(matchOption(f, 'years'), null); // ambiguous
+});
+
+test('contact fields: wordy name labels and country are recognised', () => {
+  const profile = { full_name: 'Ada Lovelace', email: null, phone: null, location: 'Lahore, Pakistan', linkedin_url: null } as never;
+  for (const label of ['Enter your full name', 'Full name', 'Please enter your legal name', 'Name']) {
+    assert.equal(profileAnswer(field('n', label), profile), 'Ada Lovelace', label);
+  }
+  assert.equal(profileAnswer(field('c', 'Country'), profile), 'Pakistan');
+  assert.equal(profileAnswer(field('u', 'University or institution name'), profile), null);
+  assert.equal(profileAnswer(field('j', 'Current job title'), profile), null);
 });

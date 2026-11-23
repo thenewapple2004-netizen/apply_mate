@@ -40,6 +40,7 @@ const CONTACT_NOTES: Record<string, string> = {
   linkedin: 'No LinkedIn URL in your profile. Add it with Edit details.',
   location: 'No location in your profile. Add it with Edit details.',
   last_name: 'Your profile has a single name; add your last name yourself.',
+  country: 'Add your location as "City, Country" in Edit details to fill this.',
 };
 
 /** Which profile contact detail a field asks for, if it clearly asks for one. */
@@ -51,8 +52,11 @@ export function contactKind(field: FormField): string | null {
   if (label.includes('linkedin')) return 'linkedin';
   if (/\b(first|given) name\b/.test(label)) return 'first_name';
   if (/\b(last|family) name\b|\bsurname\b/.test(label)) return 'last_name';
-  if (/\b(company|employer|school|university|reference|referee|manager|recruiter|preferred)\b/.test(label)) return null;
-  if (/^(your |full |legal |candidate |applicant )?name$/.test(label)) return 'full_name';
+  if (/\b(company|employer|school|university|institution|college|degree|reference|referee|manager|recruiter|preferred|job|title|project|skill|emergency|spouse|parent|guardian)\b/.test(label)) return null;
+  // "Name", "Full name", "Enter your full name", "Please enter your legal name"...
+  const strip = (words: string) => label.replace(new RegExp(`\\b(${words})\\b`, 'g'), ' ').replace(/\s+/g, ' ').trim();
+  if (strip('please|enter|type|provide|input|write|your|the|a|full|legal|complete|candidate|applicant') === 'name') return 'full_name';
+  if (/^(country|country of residence)$/.test(strip('please|enter|select|choose|your|the'))) return 'country';
   if (/\b(city|current location|location|where are you based)\b/.test(label) && !label.includes('country')) return 'location';
   return null;
 }
@@ -67,6 +71,10 @@ export function profileAnswer(field: FormField, profile: Profile): string | null
     case 'last_name': return name.length > 1 ? (name[name.length - 1] ?? null) : null;
     case 'full_name': return profile.full_name;
     case 'location': return profile.location;
+    case 'country': {
+      const parts = (profile.location || '').split(',').map((x) => x.trim()).filter(Boolean);
+      return parts.length > 1 ? (parts[parts.length - 1] ?? null) : null;
+    }
     default: return null;
   }
 }
@@ -153,16 +161,11 @@ Rules:
   personal questions the data doesn't state, pick the "prefer not to say / decline" option if
   there is one, otherwise null. Never guess salary figures, citizenship, visa or work
   authorization: null with a note unless the data states it.
-- For a text / textarea / number field you leave null, give \`suggestions\`: 2-3 neutral
-  choices the applicant could pick from, e.g. Yes / No for a yes/no question, or
-  Immediately / 2 weeks / 1 month / 2 months for notice period. For each:
-    - \`choice\`: the short option, under 6 words;
-    - \`answer\`: what the applicant would submit if they pick it, in first person,
-      expressing exactly that choice (a "No" stays a no). Short field ("text"): one
-      sentence, at most 20 words. Long field ("textarea"): 2-3 sentences, at most 70
-      words. Number field: just the number. No invented facts or reasons.
-  Suggestions are options for the applicant to choose, not claims about them.
-  Omit suggestions when you gave a value.
+- text / textarea / number fields: ALWAYS write the answer yourself, taken from the CV, profile
+  and preferences (name, education, university, degree, skills, employer, job title, years of
+  experience, projects, summary and so on). Short field: just the value, no sentence around it.
+  Long field: 2-4 first-person sentences. Return null with a short \`note\` only when the data
+  truly doesn't contain it (e.g. a GPA or street address that isn't in the CV).
 - \`applicant.preferences\`, if present, are the applicant's confirmed preferences (notice
   period, preferred locations, work arrangement, reason for changing jobs, career goals). Use them only
   when a question needs them; never state salary, work authorization or visa status.
@@ -198,7 +201,6 @@ export const ANSWERS_SCHEMA: JsonSchema = {
           value: STR,
           values: { type: 'ARRAY', items: { type: 'STRING' } },
           note: STR,
-          suggestions: { type: 'ARRAY', items: { type: 'OBJECT', properties: { choice: STR, answer: STR } } },
         },
         required: ['field_id'],
       },

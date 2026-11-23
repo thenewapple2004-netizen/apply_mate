@@ -40,7 +40,7 @@ export const DEFAULT_GEMINI: Omit<GeminiSettings, 'apiKey'> = {
   model: DEFAULT_MODEL,
   fallbackModel: DEFAULT_FALLBACK_MODEL,
   thinkingOff: true,
-  timeoutMs: 25_000, // a slow model is abandoned early so the backup model can answer
+  timeoutMs: 35_000, // a slow model is abandoned so the backup model can answer
   maxAttempts: 2,
 };
 
@@ -119,7 +119,8 @@ export class GeminiClient implements StructuredAi {
       responseSchema: request.schema,
     };
     if (this.settings.thinkingOff && !this.noThinking.has(model)) {
-      generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      // Gemini 3 models ignore a zero budget and "think" for a long time; they take a level instead.
+      generationConfig.thinkingConfig = /^gemini-3/.test(model) ? { thinkingLevel: 'minimal' } : { thinkingBudget: 0 };
     }
     const body = {
       systemInstruction: { parts: [{ text: request.system }] },
