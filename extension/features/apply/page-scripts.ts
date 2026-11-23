@@ -478,7 +478,10 @@ export async function fillFields(instructions: FillInstruction[]): Promise<FillO
       if (i.type === 'radio') {
         const inputs = els as HTMLInputElement[];
         const checked = inputs.find((e) => e.checked);
-        const target = inputs.find((e) => e.value === i.value);
+        // By value (as detected), then by the option's visible text, in case the page re-rendered it.
+        const target =
+          inputs.find((e) => (e.value || 'on') === i.value) ??
+          inputs.find((e) => norm(e.labels?.[0]?.innerText ?? '') === norm(i.value ?? ''));
         if (!target) results.push({ id: i.id, status: 'no_option' });
         else if (checked && checked !== target && checked.getAttribute(FILLED) !== checked.value) results.push({ id: i.id, status: 'kept' });
         else if (target.checked) results.push({ id: i.id, status: 'unchanged' });
@@ -573,17 +576,21 @@ export async function fillFields(instructions: FillInstruction[]): Promise<FillO
 
       const el = els[0] as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
       if (el instanceof HTMLSelectElement) {
-        if (![...el.options].some((o) => o.value === i.value)) {
+        const option =
+          [...el.options].find((o) => o.value === i.value) ??
+          [...el.options].find((o) => norm(o.textContent ?? '') === norm(i.value ?? ''));
+        if (!option) {
           results.push({ id: i.id, status: 'no_option' });
           continue;
         }
+        const wanted = option.value;
         // Index 0 is the page's default (often "Select…"); anything else was chosen.
         const userChose = el.selectedIndex > 0 && el.value !== '' && el.getAttribute(FILLED) !== el.value;
-        if (el.value === i.value) results.push({ id: i.id, status: 'unchanged' });
+        if (el.value === wanted) results.push({ id: i.id, status: 'unchanged' });
         else if (userChose) results.push({ id: i.id, status: 'kept' });
         else {
-          setValue(el, i.value);
-          el.setAttribute(FILLED, i.value);
+          setValue(el, wanted);
+          el.setAttribute(FILLED, wanted);
           mark(el);
           results.push({ id: i.id, status: 'filled' });
         }

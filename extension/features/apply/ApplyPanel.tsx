@@ -13,7 +13,7 @@ import {
   type FillStatus,
 } from './page-scripts.ts';
 import { ApplicationsPanel } from './ApplicationsPanel.tsx';
-import { shouldRemember } from './sensitivity.ts';
+import { CONSENT, SENSITIVE, shouldRemember } from './sensitivity.ts';
 import {
   clearJob,
   clearPrepared,
@@ -73,6 +73,8 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
   const [busy, setBusy] = useState<Busy>(null);
   const [message, setMessage] = useState<Message>(null);
   const [composing, setComposing] = useState<string | null>(null);
+  // false: the user stepped back from the review to the "Prepare answers" step (answers are kept).
+  const [reviewing, setReviewing] = useState(true);
   const [statsVersion, setStatsVersion] = useState(0); // bumped to reload the applied-jobs numbers
   const alive = useRef(true);
 
@@ -137,6 +139,14 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
     }
   }
 
+  /** Go back to the job details to correct them, without losing the job if the user cancels. */
+  function editJob() {
+    if (!job) return;
+    const { id: _id, profileId: _p, confirmedAt: _c, ...data } = job;
+    setMessage(null);
+    setDraft(data);
+  }
+
   async function confirmJob() {
     if (!draft) return;
     if (!draft.title.trim() && !draft.description.trim()) {
@@ -195,6 +205,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
         fillStatus: null,
       };
       setPage(next);
+      setReviewing(true);
       await savePrepared(next);
     } catch (error) {
       if (alive.current) setMessage({ kind: 'error', text: `Couldn't prepare answers. ${plain(error)}` });
@@ -267,6 +278,30 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
         editAnswer(field.id, { value: choice });
         setMessage({ kind: 'info', text: `Used "${choice}" as written; AI couldn't phrase it (${plain(error)}).` });
       }
+    } finally {
+      if (alive.current) setComposing(null);
+    }
+  }
+
+  /** The user asked the AI to write this one answer. It's marked as an AI draft for them to check. */
+  async function draftForField(field: DetectedField) {
+    if (!job || !page) return;
+    setComposing(field.id);
+    setMessage(null);
+    try {
+      const { id: _id, profileId: _p, confirmedAt: _c, ...jobData } = job;
+      const result = await applyApi.draft(profileId, jobData, field.label, field.type, field.options);
+      if (!alive.current) return;
+      const next = {
+        ...page,
+        answers: page.answers.map((a) =>
+          a.field_id === field.id ? { ...a, value: result.value, source: 'ai' as const, note: null, needs_approval: false } : a,
+        ),
+      };
+      setPage(next);
+      void savePrepared(next);
+    } catch (error) {
+      if (alive.current) setMessage({ kind: 'error', text: `Couldn't write that answer. ${plain(error)}` });
     } finally {
       if (alive.current) setComposing(null);
     }
@@ -385,7 +420,7 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
               Confirm job
             </button>
             <button type="button" className="btn" onClick={() => setDraft(null)}>
-              Cancel
+              ← Back
             </button>
           </div>
         </div>
@@ -465,14 +500,22 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
               <span className="spinner" aria-hidden="true" />
               <span>Reading the form and preparing answers… Keep this popup open.</span>
             </div>
-          ) : !page ? (
+          ) : !page || !reviewing ? (
             <div className="step-card">
+              <button type="button" className="link-btn back" onClick={editJob} disabled={busy !== null}>
+                ← Back to job details
+              </button>
               <h3>Prepare answers</h3>
               <p className="hint">On the application form, Job Fellow reads the questions and prepares answers from your profile, CV and saved answers. Nothing is filled until you approve.</p>
               <div className="actions">
                 <button type="button" className="btn primary" onClick={() => void prepareAnswers()} disabled={busy !== null}>
-                  Prepare answers for this page
+                  {page ? 'Prepare again for this page' : 'Prepare answers for this page'}
                 </button>
+                {page && (
+                  <button type="button" className="btn" onClick={() => setReviewing(true)} disabled={busy !== null}>
+                    Return to my answers →
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -484,7 +527,9 @@ export function ApplyPanel({ profileId }: { profileId: string }) {
               onEdit={editAnswer}
               onApprove={approveAnswer}
               onChoose={(field, choice) => void chooseSuggestion(field, choice)}
+              onDraft={(field) => void draftForField(field)}
               onFill={() => void fill()}
+              onBack={() => setReviewing(false)}
               onRegenerate={async () => {
                 await clearPrepared(page);
                 setPage(null);
@@ -511,8 +556,10 @@ function AnswerReview(props: {
   onEdit: (fieldId: string, patch: Partial<PreparedAnswer>) => void;
   onApprove: (fieldId: string, approved: boolean) => void;
   onChoose: (field: DetectedField, choice: string) => void;
+  onDraft: (field: DetectedField) => void;
   onFill: () => void;
   onRedo: () => void;
+  onBack: () => void;
   onRegenerate: () => void;
 }) {
   const { page } = props;
@@ -521,6 +568,9 @@ function AnswerReview(props: {
   const waiting = page.answers.filter(awaitsApproval).length;
   return (
     <div className="step-card review">
+      <button type="button" className="link-btn back" onClick={props.onBack} disabled={props.busy !== null}>
+        ← Back
+      </button>
       <div className="job-head">
         <h3>Review answers</h3>
         <div className="actions">
@@ -547,8 +597,9 @@ function AnswerReview(props: {
       {waiting > 0 && (
         <p className="notice warn" role="status">
           <span>
-            {waiting} answer{waiting === 1 ? '' : 's'} from your preferences (salary, work authorization or
-            sponsorship) will be filled only after you tick <strong>Approve</strong>.
+            {waiting} answer{waiting === 1 ? '' : 's'} on sensitive questions (salary, work authorization,
+            consent, personal details) {waiting === 1 ? 'is' : 'are'} only a proposal: {waiting === 1 ? 'it is' : 'they are'} filled
+            after you tick <strong>Approve</strong>.
           </span>
         </p>
       )}
@@ -583,6 +634,7 @@ function AnswerReview(props: {
               onEdit={props.onEdit}
               onApprove={props.onApprove}
               onChoose={props.onChoose}
+              onDraft={props.onDraft}
             />
           ) : null;
         })}
@@ -606,6 +658,7 @@ function AnswerRow({
   onEdit,
   onApprove,
   onChoose,
+  onDraft,
 }: {
   field: DetectedField;
   answer: PreparedAnswer;
@@ -615,6 +668,7 @@ function AnswerRow({
   onEdit: (id: string, patch: Partial<PreparedAnswer>) => void;
   onApprove: (id: string, approved: boolean) => void;
   onChoose: (field: DetectedField, choice: string) => void;
+  onDraft: (field: DetectedField) => void;
 }) {
   // One-click choices for a question that still needs the user.
   let chips: { label: string; pick: () => void }[] = [];
@@ -629,6 +683,17 @@ function AnswerRow({
       }));
     }
   }
+  // "Write with AI" is offered for any open question except personal ones (salary, authorization,
+  // sponsorship, consent, demographics), which are always the applicant's own.
+  const canDraft =
+    !hasAnswer(answer) &&
+    field.type !== 'checkbox' &&
+    Boolean(field.label) &&
+    !SENSITIVE.test(field.label) &&
+    !CONSENT.test(field.label) &&
+    answer.preference !== 'salary' &&
+    answer.preference !== 'authorization' &&
+    answer.preference !== 'sponsorship';
   const id = `answer-${field.id}`;
   const pending = awaitsApproval(answer);
   const source = hasAnswer(answer) ? answer.source : 'none';
@@ -679,13 +744,18 @@ function AnswerRow({
         </label>
         <span className={pending ? 'source none' : `source ${source}`}>{pending ? 'Approve' : SOURCE_LABEL[source]}</span>
       </div>
-      {chips.length > 0 && (
+      {(chips.length > 0 || canDraft) && (
         <div className="chips" role="group" aria-label={`Quick answers for: ${field.label}`}>
           {chips.map((chip) => (
             <button key={chip.label} type="button" className="chip" onClick={chip.pick} disabled={disabled}>
               {chip.label}
             </button>
           ))}
+          {canDraft && (
+            <button type="button" className="chip draft" onClick={() => onDraft(field)} disabled={disabled}>
+              ✨ Write with AI
+            </button>
+          )}
           {composing && <span className="hint">Writing your answer…</span>}
         </div>
       )}
@@ -693,7 +763,7 @@ function AnswerRow({
       {answer.needs_approval && hasAnswer(answer) && (
         <label className="check approve">
           <input type="checkbox" checked={Boolean(answer.approved)} onChange={(e) => onApprove(field.id, e.target.checked)} />
-          Approve: use this answer from my preferences
+          Approve: use this answer
         </label>
       )}
       {problem && <span className={status === 'kept' ? 'hint' : 'field-error'}>{problem}</span>}

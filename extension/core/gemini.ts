@@ -40,7 +40,7 @@ export const DEFAULT_GEMINI: Omit<GeminiSettings, 'apiKey'> = {
   model: DEFAULT_MODEL,
   fallbackModel: DEFAULT_FALLBACK_MODEL,
   thinkingOff: true,
-  timeoutMs: 45_000,
+  timeoutMs: 25_000, // a slow model is abandoned early so the backup model can answer
   maxAttempts: 2,
 };
 
@@ -104,9 +104,10 @@ export class GeminiClient implements StructuredAi {
         }
         last = error instanceof ApiError ? error : aiUnavailable();
       }
-      const retryable = last.status === 503 || last.status === 504 || last.status === 502 && last.message.includes('read');
+      // A timeout is not retried on the same model (that only doubles the wait): the backup model takes over.
+      const retryable = last.status === 503 || (last.status === 502 && last.message.includes('read'));
       if (!retryable || attempt >= this.settings.maxAttempts) break;
-      await this.sleep(500 * 2 ** (attempt - 1) + Math.random() * 300);
+      await this.sleep(300 * 2 ** (attempt - 1) + Math.random() * 200);
     }
     throw last;
   }

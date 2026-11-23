@@ -1187,3 +1187,12 @@ html {
 .connection > .notice {
   margin: 10px 0 0;
 }
+
+.chip.draft {
+  border-style: dashed;
+}
+
+.link-btn.back {
+  align-self: flex-start;
+  margin-bottom: 4px;
+}

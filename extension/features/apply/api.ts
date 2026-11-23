@@ -1,6 +1,6 @@
 import { saveAnswers } from '../../core/answers.ts';
 import { applicationStats, listApplications, recordApplication, removeApplication } from '../../core/history.ts';
-import { compose, currentContextVersion, prepare } from '../../core/prepare.ts';
+import { compose, currentContextVersion, draftAnswer, prepare } from '../../core/prepare.ts';
 import { ctx } from '@/lib/runtime.ts';
 
 import type { DetectedField } from './page-scripts.ts';
@@ -42,6 +42,10 @@ export const applyApi = {
   /** Writes a short answer from the choice the user clicked, keeping that choice. */
   compose: (profileId: string, job: Job, question: string, type: string, choice: string) =>
     compose(ctx, profileId, { job, question, type: type as never, choice }),
+
+  /** Writes one answer because the user asked ("Write with AI"). Never for sensitive questions. */
+  draft: (profileId: string, job: Job, question: string, type: string, options: { value: string; label: string }[]) =>
+    draftAnswer(ctx, profileId, { job, question, type: type as never, options }),
 
   saveAnswers: async (profileId: string, answers: { question: string; answer: string }[]) => ({
     saved: await saveAnswers(ctx, profileId, answers),

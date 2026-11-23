@@ -6,9 +6,9 @@ import { getPreferences, savePreferences } from '../core/preferences.ts';
 import { createResume, listResumes, setPrimary, deleteResume, getResume } from '../core/resumes.ts';
 import { analyzeResume, getDetails, saveDetails } from '../core/cv.ts';
 import { confirm, getState } from '../core/onboarding.ts';
-import { compose, prepare } from '../core/prepare.ts';
+import { compose, draftAnswer, prepare } from '../core/prepare.ts';
 import { applicationStats, jobKey, listApplications, recordApplication, removeApplication } from '../core/history.ts';
-import { saveAnswers, listAnswers } from '../core/answers.ts';
+import { saveAnswers, listAnswers, matchOption } from '../core/answers.ts';
 import { exportBackup, importBackup, saveAiSettings, makeAi } from '../core/settings.ts';
 import { GeminiClient } from '../core/gemini.ts';
 import type { FormField } from '../core/types.ts';
@@ -164,12 +164,9 @@ test('prepare: profile, preferences with approval, sensitive, saved, ai, cache',
     field('f11', 'Years of experience', 'select', ['1-2', '3-5']),
     field('f12', 'Notice period'),
   ];
-  ai.replies.push({
-    answers: [
-      { field_id: 'f10', value: 'Because I like building things.' },
-      { field_id: 'f11', value: '3-5' },
-    ],
-  });
+  // Choices, short text and long text are sent as separate, parallel requests (in that order).
+  ai.replies.push({ answers: [{ field_id: 'f8', value: 'Female' }, { field_id: 'f9', value: 'yes' }, { field_id: 'f11', value: 'about 3-5 years' }] });
+  ai.replies.push({ answers: [{ field_id: 'f10', value: 'Because I like building things.' }] });
   const first = await prepare(ctx, p.id, { job: JOB, fields });
   const by = new Map(first.answers.map((a) => [a.field_id, a]));
   assert.equal(by.get('f1')?.value, 'Ada Lovelace');
@@ -182,27 +179,32 @@ test('prepare: profile, preferences with approval, sensitive, saved, ai, cache',
   assert.equal(by.get('f5')?.needs_approval, true);
   assert.equal(by.get('f6')?.value, 'No');
   assert.equal(by.get('f7')?.source, 'saved');
-  assert.equal(by.get('f8')?.source, 'none');
-  assert.match(by.get('f9')?.note ?? '', /tick it yourself/);
+  // Sensitive questions still get a proposed answer, but only after the applicant approves it.
+  assert.equal(by.get('f8')?.value, 'Female');
+  assert.equal(by.get('f8')?.needs_approval, true);
+  assert.deepEqual(by.get('f9')?.values, ['agree']);
+  assert.equal(by.get('f9')?.needs_approval, true);
   assert.equal(by.get('f10')?.source, 'ai');
   assert.equal(by.get('f11')?.value, '3-5');
   assert.equal(by.get('f12')?.value, '2 weeks');
   assert.equal(by.get('f12')?.needs_approval, false);
   assert.equal(first.ai_used, true);
   // The AI saw only the fields that needed it, and never the sensitive preferences.
-  const prompt = ai.requests[0]?.prompt ?? '';
+  assert.equal(ai.requests.length, 2);
+  const prompt = ai.requests.map((r) => r.prompt).join(' ');
   assert.ok(!prompt.includes('90000') && !prompt.includes('United Kingdom') && !prompt.includes('sponsor'));
-  assert.ok(prompt.includes('f10') && !prompt.includes('"f8"'));
+  assert.ok(prompt.includes('f10') && prompt.includes('"f8"') && !prompt.includes('"f1"'));
 
   const second = await prepare(ctx, p.id, { job: JOB, fields });
   assert.equal(second.ai_used, false);
-  assert.equal(second.cache_hits, 2);
+  assert.equal(second.cache_hits, 4);
   assert.equal(second.answers.find((a) => a.field_id === 'f10')?.cached, true);
-  assert.equal(ai.requests.length, 1);
+  assert.equal(second.answers.find((a) => a.field_id === 'f8')?.needs_approval, true);
+  assert.equal(ai.requests.length, 2);
 
   // Editing the profile invalidates the cache.
   await updateProfile(ctx, p.id, { location: 'Paris' });
-  ai.replies.push({ answers: [] });
+  ai.replies.push({ answers: [] }, { answers: [] });
   const third = await prepare(ctx, p.id, { job: JOB, fields });
   assert.equal(third.cache_hits, 0);
   assert.notEqual(third.context_version, first.context_version);
@@ -374,4 +376,39 @@ test('gemini: errors are translated', async () => {
   await assert.rejects(new GeminiClient({ ...settings, apiKey: ' ' }).generate(request), (e: ApiError) => e.status === 503 && /API key/.test(e.message));
   const bad = new GeminiClient({ ...settings, fallbackModel: '' }, { fetch: async () => geminiOk({ nope: true }), sleep: async () => {} });
   await rejects(bad.generate({ ...request, parse: () => { throw new Error('x'); } }), 502);
+});
+
+test('draft: writes one answer on request, never for personal questions', async () => {
+  const { ctx, ai } = makeCtx();
+  const p = await createProfile(ctx, { full_name: 'Ada', email: null, phone: null, location: null, linkedin_url: null });
+  await savePreferences(ctx, p.id, { salary_expectation: '90000', career_goals: 'Lead a team' });
+  ai.replies.push({ value: 'I want to grow into a lead engineering role.' });
+  const out = await draftAnswer(ctx, p.id, { job: JOB, question: 'Where do you see yourself in five years?', type: 'textarea' });
+  assert.equal(out.value, 'I want to grow into a lead engineering role.');
+  assert.ok(!(ai.requests[0]?.prompt ?? '').includes('90000'), 'salary must never reach the AI');
+
+  const n = ai.requests.length;
+  for (const question of ['What are your salary expectations?', 'Are you legally authorized to work in Canada?', 'Do you require visa sponsorship?', 'I agree to the privacy policy', 'Gender']) {
+    await rejects(draftAnswer(ctx, p.id, { job: JOB, question, type: 'text' }), 422);
+  }
+  await rejects(draftAnswer(ctx, p.id, { job: JOB, question: 'Tick this', type: 'checkbox' }), 422);
+  assert.equal(ai.requests.length, n, 'no AI call for personal questions');
+
+  ai.replies.push({ value: '3-5' });
+  const pick = await draftAnswer(ctx, p.id, { job: JOB, question: 'Years of experience', type: 'select', options: [{ value: '1-2', label: '1-2' }, { value: '3-5', label: '3-5' }] });
+  assert.equal(pick.value, '3-5');
+  ai.replies.push({ value: 'banana' });
+  await rejects(draftAnswer(ctx, p.id, { job: JOB, question: 'Years of experience', type: 'select', options: [{ value: '1-2', label: '1-2' }] }), 422);
+  ai.replies.push({ value: '   ' });
+  await rejects(draftAnswer(ctx, p.id, { job: JOB, question: 'Anything else?', type: 'text' }), 422);
+});
+
+test('matchOption: exact, then unambiguous word match', () => {
+  const f = field('x', 'Experience', 'select', ['Yes', 'No', '3-5 years', '6-10 years']);
+  assert.equal(matchOption(f, 'yes'), 'Yes');
+  assert.equal(matchOption(f, 'Yes, I am'), 'Yes');
+  assert.equal(matchOption(f, 'No'), 'No');
+  assert.equal(matchOption(f, 'not sure'), null);
+  assert.equal(matchOption(f, '3-5 years of experience'), '3-5 years');
+  assert.equal(matchOption(f, 'years'), null); // ambiguous
 });

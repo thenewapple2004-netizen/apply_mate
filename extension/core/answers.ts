@@ -19,14 +19,36 @@ export function questionKey(question: string): string {
   return norm(text).slice(0, 300);
 }
 
-/** The exact option value an answer refers to, matched by value or label. */
+const tokens = (s: string): string[] => norm(s).replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(Boolean);
+
+/**
+ * The option value an answer refers to. Exact value/label first; otherwise the one option whose
+ * words contain (or are contained in) the answer's words, so "Yes, I am" still picks "Yes" and
+ * "3 to 5 years" still picks "3-5 years". An ambiguous answer matches nothing.
+ */
 export function matchOption(field: FormField, raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
   const wanted = norm(raw);
+  if (!wanted) return null;
   for (const option of field.options) {
     if (raw === option.value || wanted === norm(option.value) || wanted === norm(option.label)) return option.value;
   }
-  return null;
+  const want = tokens(raw);
+  if (!want.length) return null;
+  let best: { value: string; score: number } | null = null;
+  let tie = false;
+  for (const option of field.options) {
+    const have = tokens(option.label);
+    if (!have.length) continue;
+    const [small, big] = have.length <= want.length ? [have, want] : [want, have];
+    if (!small.every((t) => big.includes(t))) continue;
+    const score = small.length / big.length;
+    if (!best || score > best.score) {
+      best = { value: option.value, score };
+      tie = false;
+    } else if (score === best.score) tie = true;
+  }
+  return best && !tie ? best.value : null;
 }
 
 /** A prepared answer with every field filled in. */
